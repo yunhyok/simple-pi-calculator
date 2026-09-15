@@ -246,6 +246,31 @@ def test_five_port_rows_wrap_after_four_pairs():
     np.testing.assert_array_equal(m.real, data.real)
 
 
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5, 9])
+@pytest.mark.parametrize("param,fmt,r", [("S", "RI", 1.0), ("S", "MA", 50.0), ("Z", "RI", 50.0),
+                                         ("Z", "MA", 1.0)])
+def test_touchstone_files_read_by_scikit_rf(tmp_path: Path, n, param, fmt, r):
+    """External validator (review v0.2): scikit-rf's Touchstone reader recovers frequency,
+    reference resistance and every (non-symmetric) matrix entry, including the 2-port
+    21-before-12 order, the row wrapping for N ≥ 5 and the v1 normalisation of Z."""
+    skrf = pytest.importorskip("skrf")
+    import warnings
+    from simple_pi_calculator.core.touchstone import write_touchstone_v1
+    rng = np.random.default_rng(n)
+    f = np.geomspace(1e5, 1e9, 6)
+    data = rng.normal(size=(6, n, n)) + 1j * rng.normal(size=(6, n, n))
+    path = tmp_path / f"t.s{n}p"
+    write_touchstone_v1(path, f, data, parameter=param, data_format=fmt, r_ref=r,
+                        comments=["PWR: VDD_ü", "second line"])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        net = skrf.Network(str(path))
+    np.testing.assert_allclose(net.f, f, rtol=1e-14)
+    np.testing.assert_allclose(net.z0, r)
+    got = net.s if param == "S" else net.z
+    np.testing.assert_allclose(got, data, rtol=1e-9, atol=1e-12)
+
+
 def test_touchstone_rejects_bad_input():
     with pytest.raises(ValueError):
         format_touchstone_v1([1e6], np.ones((1, 1, 1)), parameter="Y")

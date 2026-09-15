@@ -19,6 +19,9 @@ from simple_pi_calculator.constants import (PAD_MARGIN_FACTOR, PLANE_HEIGHT_FACT
                                             X_MARGIN_FACTOR)
 from simple_pi_calculator.errors import InputError, IssueCollector
 
+#: relative tolerance of the clipping and overlap warnings (rounding of the sub-row y values)
+_GEOM_REL_TOL = 1e-9
+
 __all__ = [
     "DecapGroupGeom",
     "Placement",
@@ -187,7 +190,7 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
             n_r = min(n_row, n_pad - r * n_row)
             y_r = y_pad + (r - (n_sub - 1) / 2.0) * w_pad
             y_c = min(max(y_r, 0.5 * w_pad), H - 0.5 * w_pad)
-            if y_c != y_r:
+            if abs(y_c - y_r) > _GEOM_REL_TOL * w_pad:
                 clipped += n_r
             for i in range(n_r):
                 xs.append(m_p + (i + 0.5) * l_p / n_r)
@@ -216,7 +219,7 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
             n_r = min(n_row, n_ports - r * n_row)
             y_r = y_k + (r - (n_sub - 1) / 2.0) * w
             y_c = min(max(y_r, 0.5 * w), H - 0.5 * w)
-            if y_c != y_r:
+            if abs(y_c - y_r) > _GEOM_REL_TOL * w:
                 clipped += n_r
             for i in range(n_r):
                 xs.append(m_x + (i + 0.5) * l_x / n_r)
@@ -234,7 +237,9 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
 
     # Overlapping square footprints (§2.5.3)
     if xy.shape[0] > 1:
-        half = 0.5 * (widths[:, None] + widths[None, :])
+        # sub-rows are stacked at a pitch of exactly one port width (§2.5.1, §2.5.3): touching
+        # footprints must not be reported because of rounding in y_r (review v0.2)
+        half = 0.5 * (widths[:, None] + widths[None, :]) * (1.0 - _GEOM_REL_TOL)
         dx = np.abs(xy[:, None, 0] - xy[None, :, 0])
         dy = np.abs(xy[:, None, 1] - xy[None, :, 1])
         overlap = np.triu((dx < half) & (dy < half), k=1)

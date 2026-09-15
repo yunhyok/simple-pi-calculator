@@ -86,7 +86,7 @@ class S2pDecapModel:
 class _ImpedanceMemo:
     """Per-model memo of Z(f) keyed by the exact frequency vector (§3.9); bounded, thread-safe.
 
-    Lives on the model object, which :class:`DecapModelCache` keys by file mtime/size, subckt and
+    Lives on the model object, which :class:`DecapModelCache` keys by file content/size, subckt and
     s2p mode — so a changed file yields a new model and a fresh memo.
     """
 
@@ -192,7 +192,8 @@ def load_decap_model(path: str | os.PathLike, subckt: str | None, s2p_mode: str 
 
 
 class DecapModelCache:
-    """Cache of loaded decap models keyed by (abs path, mtime, size, subckt, s2p mode).
+    """Cache of loaded decap models keyed by (abs path, size, SHA-256 of the content, subckt,
+    s2p mode).
 
     Warnings emitted while loading are replayed into the caller's collector on every cache hit, so each
     computation sees the same issues. Failed loads are not cached.
@@ -213,7 +214,15 @@ class DecapModelCache:
         ext = os.path.splitext(p)[1].lower()
         sub_key = (subckt or "").strip().lower() if ext in SPICE_EXTENSIONS else ""
         mode_key = (s2p_mode or "").strip().lower() if ext in S2P_EXTENSIONS else ""
-        key = (os.path.normcase(p), st.st_mtime_ns, st.st_size, sub_key, mode_key)
+        # the content digest makes the key independent of the file-system clock: a same-size
+        # edit within the mtime resolution (FAT: 2 s, some network shares) or a tool that
+        # restores the modification time must not return the stale model (review v0.2)
+        try:
+            with open(p, "rb") as fh:
+                digest = hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            digest = f"unreadable:{st.st_mtime_ns}"  # load_decap_model reports the read error
+        key = (os.path.normcase(p), st.st_size, digest, sub_key, mode_key)
         with self._lock:
             hit = self._cache.get(key)
             if hit is not None:
@@ -223,6 +232,11 @@ class DecapModelCache:
                 return model
             rec = _Recorder(issues)
             model = load_decap_model(p, subckt, s2p_mode, rec)  # type: ignore[arg-type]
+            # older versions of the same file/subckt/mode can never be hit again: drop them so
+            # repeated edits during a session do not accumulate models
+            for old in [k for k in self._cache
+                        if k[0] == key[0] and k[3:] == key[3:] and k != key]:
+                del self._cache[old]
             self._cache[key] = (model, rec.recorded)
             return model
 

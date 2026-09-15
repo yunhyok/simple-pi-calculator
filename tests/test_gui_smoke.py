@@ -11,6 +11,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from simple_pi_calculator import __version__
 from typing import Any
 
 import numpy as np
@@ -392,7 +393,7 @@ def test_help_menu_and_about(make_window):
     assert hw.current_page_file() == "results.html"
     w.help_page_actions["physics.html"].trigger()
     assert hw.current_page_file() == "physics.html"
-    assert "MIT" in w.about_text() and "0.1.0" in w.about_text()
+    assert "MIT" in w.about_text() and __version__ in w.about_text()
 
 
 # ---------------------------------------------------------------------------------------------

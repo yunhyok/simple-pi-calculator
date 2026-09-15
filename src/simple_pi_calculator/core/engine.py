@@ -72,7 +72,7 @@ def default_cavity_cache() -> CavityCache:
 
 
 def default_model_cache() -> DecapModelCache:
-    """Module-level decap model cache shared by successive computations (keyed by file mtime)."""
+    """Module-level decap model cache shared by successive computations (keyed by file content)."""
     return _DEFAULT_CACHE
 
 
@@ -202,6 +202,18 @@ def _net_task(inputs: ProjectInputs, pwr: PwrSpec, grid: np.ndarray, cache: Deca
         pwr_issues.error("E_PWR_INTERNAL", f"PWR {pwr.name}: unexpected error "
                          f"({type(exc).__name__}: {exc}); other PWRs are not affected. "
                          "See the log file for details.", f"PWR:{pwr.name}")
+    if result is None:
+        tag = f"PWR:{pwr.name}"
+        errors = [i for i in pwr_issues.issues if i.severity.name == "ERROR"]
+        if not any(i.source in (None, tag) for i in errors):
+            # errors raised with a file as source (model parse/read errors, §4.5) must still be
+            # attributable to the net: the GUI marks failed nets and exports skip them by
+            # ``source == "PWR:<name>"`` (§5.2; review v0.2)
+            first = errors[0] if errors else None
+            pwr_issues.error("E_PWR_FAILED",
+                             f"PWR {pwr.name} was not computed"
+                             + (f": {first.code} in {first.source}." if first else "."),
+                             tag, first.source if first else None)
     out = []
     for i in pwr_issues.issues:
         if i.source is None:

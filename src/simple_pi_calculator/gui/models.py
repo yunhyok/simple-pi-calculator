@@ -511,7 +511,8 @@ class DecapModelInfo:
             st = os.stat(path)
         except OSError:
             return {}
-        key = (os.path.normcase(path), st.st_mtime_ns, subckt or "", mode or default_mode)
+        key = (os.path.normcase(path), st.st_mtime_ns, st.st_size, subckt or "",
+               mode or default_mode)
         if key in self._values:
             return self._values[key]
         out: dict[str, float | None] = {"c_f": None, "srf_hz": None}

@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Document version | 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
+| Document version | 1.4.1 — review v0.2 fixes (docs/REVIEW-v0.2.md): decap model cache keyed by file content, rounding tolerance of the clipping/overlap warnings, `E_PWR_FAILED`, `W_EXPORT_SKIPPED`. 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
 | Status | Implementation-ready |
 | License of project | MIT |
 | Target platform | Windows 10/11 x64 (development also works on Linux/macOS) |
@@ -1021,7 +1021,7 @@ user has set them (so the frozen build behaves the same without `threadpoolctl`)
 | Cache | Key | Invalidated by | Not invalidated by | Bound |
 |---|---|---|---|---|
 | Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths (PAD row and decap rows), N_pad (only when ≠ 1, so N_pad = 1 keys are unchanged), evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, **Number of PADs** (pad positions and count), decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only (these enter only the loads Z_L and Z_via,pad, which are recomputed on every run; PAD vias also changes w_pad and therefore the key) | 32 entries and 512 MB, LRU; stored read-only |
-| Decap model (`DecapModelCache`, existing) | abs path, mtime, size, subckt, S2P mode | file edit | — | unbounded (small) |
+| Decap model (`DecapModelCache`, existing) | abs path, size, SHA-256 of the file content, subckt, S2P mode (content, not mtime: a same-size edit that keeps the modification time — coarse FAT/SMB clocks, tools restoring mtimes — still invalidates; review v0.2) | file edit | touch without content change | unbounded (small) |
 | Decap impedance (memo on each cached model object) | exact evaluation frequency vector | new model object (file edit, subckt, mode), sweep | everything else | 8 sweeps per model; warnings replayed on hits |
 
 `evaluation_frequencies` (§3.1) is computed once per net; the grid ∪ marker vector is evaluated in a
@@ -1469,7 +1469,7 @@ rows as in §4.3/§4.4).
 Entry points: File ▸ Export ▸ (Results CSV…, Results XLSX…, Touchstone…, Plot PNG…, All Plots…)
 and the same menu on the "↧ Export" button of the results toolbar. Every export reports an
 `I_EXPORT` Info line with the written path(s) to the Messages dock (category `export`); any
-exception becomes an `E_EXPORT` Error line — exports never raise into the GUI.
+exception becomes an `E_EXPORT` Error line — exports never raise into the GUI. PWR nets whose computation failed have no results and are skipped by every export; the export then adds a `W_EXPORT_SKIPPED` Warning naming them (review v0.2). A failed net always carries an Error with `source = "PWR:<name>"`: when its errors came from a file (model parse/read errors), `compute_project` adds `E_PWR_FAILED` (source `PWR:<name>`, location = that file) so the GUI can mark the net's tab as failed.
 
 **CSV** (`io/export.py`), options dialog:
 
@@ -1812,7 +1812,7 @@ class S2pDecapModel:        # wraps TwoPortData + mode
 
 class DecapModelCache:
     def get(self, path: str, subckt: str | None, s2p_mode: str,
-            issues: IssueCollector) -> DecapModel: ...   # key includes file mtime
+            issues: IssueCollector) -> DecapModel: ...   # key includes a content digest
 ```
 
 ```python
@@ -3007,7 +3007,7 @@ Deviations and clarifications found while reviewing the implementation against t
    other PWRs still compute), `E_INTERNAL` (uncaught GUI exception, reported in the Messages dock),
    `E_VIA_DRILL`, `E_VIA_MODEL`, `E_VIA_PLATING`, `E_VIA_SIGMA`, `E_VIA_MOUNT_L`, `E_XL_OPEN`,
    `E_XL_READ`, `E_XL_MISSING_VALUE`, `E_XL_MODE`, `E_S2P_MODE`, `E_SPICE_SYNTAX`, `E_SPICE_VALUE`,
-   `E_SPICE_K`, `W_SPICE_NEGATIVE_R`, `W_DECAP_PWR_UNKNOWN`, `W_PROJECT_VALUE`,
+   `E_SPICE_K`, `W_SPICE_NEGATIVE_R`, `E_PWR_FAILED` (net not computed because of an error whose source is a file, §4.8), `W_EXPORT_SKIPPED` (§4.8), `W_DECAP_PWR_UNKNOWN`, `W_PROJECT_VALUE`,
    `I_PROJECT_SESSION_IGNORED`, and the GUI-only `E_ENGINE_UNAVAILABLE`, `E_INPUTS`, `E_VALIDATION`,
    `E_COMPUTE_FAILED`, `I_COMPUTE_CANCELLED`.
 4. **§4.1 Excel reading** is more tolerant than specified: the workbook is opened with

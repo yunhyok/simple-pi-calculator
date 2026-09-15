@@ -219,3 +219,61 @@ def test_pad_row_errors_and_clipping():
     assert "W_PAD_CLIPPED" in issues.codes()
     y = pl.pads_xy_m[:, 1]
     assert np.all(y >= W_DEC / 2 - 1e-15) and np.all(y <= pl.height_m - W_DEC / 2 + 1e-15)
+
+
+# ---------------------------------------------------------------------------------------------
+# Review v0.2: crowded pad rows (docs/REVIEW-v0.2.md)
+# ---------------------------------------------------------------------------------------------
+def test_stacked_sub_rows_do_not_report_rounding_overlap():
+    """40 pads of 4 PAD vias on a 20 mm plane: 6 sub-rows at pitch w_pad touch but do not overlap;
+    the rounding of y_r (−6.5e−19 m) must not raise W_PORT_OVERLAP."""
+    from simple_pi_calculator.core.cavity import cluster_port_width
+    w_pad = cluster_port_width(4, 0.2 * MM, 1.0 * MM)
+    issues = IssueCollector()
+    pl = place_ports(20 * MM, [DecapGroupGeom(10, 30 * MM)], W_DEC, w_pad, issues, "PWR:T",
+                     n_pads=40)
+    assert "W_PORT_OVERLAP" not in issues.codes() and "W_PAD_CLIPPED" not in issues.codes()
+    assert len(np.unique(np.round(pl.pads_xy_m[:, 1] / w_pad, 6))) == 6
+    # the same for decap sub-rows
+    issues = IssueCollector()
+    place_ports(5 * MM, [DecapGroupGeom(40, 20 * MM)], W_DEC, W_DEC, issues, "PWR:T")
+    assert "W_PORT_OVERLAP" not in issues.codes()
+
+
+@pytest.mark.parametrize("pad_vias,dist_mm,clipped", [(1, 2, False), (4, 5, True), (9, 10, True),
+                                                      (4, 30, False), (16, 30, True)])
+def test_forty_pads_on_20mm_plane_end_to_end(pad_vias, dist_mm, clipped):
+    """Crowded PAD rows compute finite impedances, all ports lie inside the plane, and
+    W_PAD_CLIPPED is issued exactly when a pad sub-row had to be moved."""
+    import math
+    from simple_pi_calculator.core.cavity import cluster_port_width
+    from simple_pi_calculator.core.pdn import DecapGroup, PwrSpec, compute_pwr
+    from simple_pi_calculator.core.stackup import Layer, Stackup
+    from simple_pi_calculator.core.via import ViaSettings
+
+    class Rlc:
+        label = "rlc"
+
+        def impedance(self, f, issues=None):
+            w = 2 * math.pi * np.asarray(f)
+            return 0.03 + 1j * w * 0.45e-9 + 1 / (1j * w * 100e-9)
+
+    st = Stackup(tuple(Layer(n, nm, t * MM, s, dk, df) for n, nm, t, s, dk, df in [
+        (1, "TOP", 0.035, 5.8e7, None, None), (2, "PP", 0.1, None, 4.0, 0.01),
+        (3, "GND", 0.035, 5.8e7, None, None), (4, "CORE", 0.1, None, 4.0, 0.01),
+        (5, "PWR", 0.035, 5.8e7, None, None)]))
+    vias = ViaSettings(drill_diameter_m=0.2 * MM, antipad_diameter_m=0.5 * MM,
+                       via_pitch_m=1 * MM, pad_via_count=pad_vias)
+    issues = IssueCollector()
+    res = compute_pwr(st, PwrSpec("P", 5, 3, 20 * MM, n_pads=40),
+                      [DecapGroup("P", Rlc(), 10, dist_mm * MM)], vias,
+                      np.geomspace(1e5, 1e9, 25), [1e6], True, issues, workers=2)
+    assert np.all(np.isfinite(res.z_pad)) and np.all(np.isfinite(res.z_plane_only))
+    pl = res.placement
+    w = pl.port_widths_m
+    assert pl.n_pads == 40 and w[0] == pytest.approx(cluster_port_width(pad_vias, 0.2 * MM, MM))
+    assert np.all(pl.xy_m[:, 0] - w / 2 >= -1e-15)
+    assert np.all(pl.xy_m[:, 0] + w / 2 <= 20 * MM + 1e-15)
+    assert np.all(pl.xy_m[:, 1] - w / 2 >= -1e-15)
+    assert np.all(pl.xy_m[:, 1] + w / 2 <= pl.height_m + 1e-15)
+    assert ("W_PAD_CLIPPED" in issues.codes()) == clipped

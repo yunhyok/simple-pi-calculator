@@ -11,7 +11,8 @@ from simple_pi_calculator.core import units
 
 
 def test_version_string():
-    assert __version__ == "0.1.0"
+    import re
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
 
 
 def test_physical_constants():

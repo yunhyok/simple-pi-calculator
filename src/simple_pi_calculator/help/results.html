@@ -170,6 +170,8 @@ modelled – do not use the file to study noise transfer between rails.</td></tr
 <tr><td><code>W_MODES_CAPPED</code></td><td>The number of cavity modes hit the limit; spreading inductance may be slightly under-resolved.</td><td>Happens for very large planes with very small drills; results remain usable.</td></tr>
 <tr><td><code>I_EXPORT</code></td><td>An export finished; the message lists the written file(s).</td><td>–</td></tr>
 <tr><td><code>E_EXPORT</code></td><td>An export failed (folder not writable, file in use, PWRs with different frequency grids for a one-file export …).</td><td>Read the message, choose another folder or close the file in the other program, and export again.</td></tr>
+<tr><td><code>W_EXPORT_SKIPPED</code></td><td>A PWR whose computation failed has no results and was left out of the export.</td><td>Fix the error of that PWR (see <code>E_PWR_FAILED</code> and the messages above it), run again and export again.</td></tr>
+<tr><td><code>E_PWR_FAILED</code></td><td>The PWR was not computed because of an error in one of its files (for example a decap model that cannot be parsed); the Location column names the file.</td><td>Correct the file named in the message; the other PWRs are not affected.</td></tr>
 <tr><td><code>E_SINGULAR</code></td><td>The port reduction could not be solved at some frequency.</td><td>Look for <code>W_PORT_OVERLAP</code> or zero-length vias with ideal shorts in models.</td></tr>
 </table>
 

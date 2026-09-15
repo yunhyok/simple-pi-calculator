@@ -1018,8 +1018,14 @@ class MainWindow(QMainWindow):
         if not paths:
             return
         text = paths[0] if len(paths) == 1 else f"{len(paths)} files: " + "; ".join(paths)
-        self.message_dock.add_issues("export", [Issue("I_EXPORT", Severity.INFO,
-                                                      f"{title}: exported {text}", "Export")])
+        issues = [Issue("I_EXPORT", Severity.INFO, f"{title}: exported {text}", "Export")]
+        exported = {r.name for r in self._exportable_results()}
+        skipped = [n for n in self._failed_pwr_names() if n not in exported]
+        if skipped:  # failed nets have no data: say so instead of silently leaving them out
+            issues.append(Issue("W_EXPORT_SKIPPED", Severity.WARNING,
+                                f"{title}: PWR {', '.join(skipped)} skipped (computation "
+                                "failed, no results).", "Export"))
+        self.message_dock.add_issues("export", issues)
         self.statusBar().showMessage(f"{title}: exported {len(paths)} file(s)", 8000)
 
     def _export_failed(self, title: str, exc: BaseException) -> None:
