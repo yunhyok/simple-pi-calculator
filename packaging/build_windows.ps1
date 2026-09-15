@@ -50,11 +50,7 @@ $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 # --- 2. Install the package (+ dev extras: pytest, pytest-qt, pyinstaller) --
 Write-Host "-- Installing package (editable, dev extras)" -ForegroundColor Yellow
 & $VenvPython -m pip install -e ".[dev]"
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  '.[dev]' extra not found; falling back to explicit deps." -ForegroundColor Yellow
-    & $VenvPython -m pip install -e .
-    & $VenvPython -m pip install pyinstaller pytest pytest-qt
-}
+if ($LASTEXITCODE -ne 0) { throw "pip install -e .[dev] failed" }
 
 # --- 3. Version -------------------------------------------------------
 if (-not $Version) {
@@ -68,6 +64,7 @@ if (-not $SkipTests) {
     Write-Host "-- Running tests (QT_QPA_PLATFORM=offscreen)" -ForegroundColor Yellow
     $env:QT_QPA_PLATFORM = "offscreen"
     & $VenvPython -m pytest -q
+    if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
     Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
 } else {
     Write-Host "-- Skipping tests (-SkipTests)" -ForegroundColor DarkYellow
@@ -80,17 +77,27 @@ if (Test-Path $VersionInfoScript) {
     Write-Host "-- Generating version_info.txt" -ForegroundColor Yellow
     & $VenvPython $VersionInfoScript $VersionInfoOut
 } else {
-    Write-Host "  tools\write_version_info.py not found yet; skipping (PyInstaller will build without a version resource)." -ForegroundColor DarkYellow
+    throw "tools\write_version_info.py not found"
 }
 
 # --- 6. PyInstaller build -----------------------------------------------
 Write-Host "-- Running PyInstaller" -ForegroundColor Yellow
 Push-Location (Join-Path $RepoRoot "packaging")
 try {
-    & $VenvPython -m PyInstaller --noconfirm --clean simple_pi_calculator.spec
+    # distpath/workpath at the repo root: installer.iss reads ..\dist\SimplePICalculator
+    & $VenvPython -m PyInstaller --noconfirm --clean simple_pi_calculator.spec --distpath ..\dist --workpath ..\build
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 } finally {
     Pop-Location
 }
+
+# --- 6b. Smoke test of the frozen app (windowed exe: read the report file) ---
+$Exe = Join-Path $RepoRoot "dist\SimplePICalculator\SimplePICalculator.exe"
+$Report = Join-Path $RepoRoot "build\selftest.txt"
+$proc = Start-Process -FilePath $Exe -ArgumentList "--self-test", "--self-test-report", "`"$Report`"" -PassThru
+if (-not $proc.WaitForExit(120000)) { $proc.Kill(); throw "Self-test timed out" }
+if (Test-Path $Report) { Get-Content $Report | Write-Host }
+if ($proc.ExitCode -ne 0) { throw "Self-test failed with exit code $($proc.ExitCode)" }
 
 # --- 7. Inno Setup compile ------------------------------------------------
 Write-Host "-- Compiling installer with Inno Setup" -ForegroundColor Yellow

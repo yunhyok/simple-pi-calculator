@@ -83,6 +83,25 @@ class _Table:
         return isinstance(value, str) and value.startswith("=")
 
 
+def _sheet_rows(ws: Any) -> list[tuple[Any, ...]]:
+    """Cell values of a worksheet with merged ranges filled from their top-left cell."""
+    rows = [list(r) for r in ws.iter_rows(values_only=True)]
+    merged = getattr(ws, "merged_cells", None)  # absent on read-only worksheets
+    for rng in list(merged.ranges) if merged is not None else []:
+        r0, c0 = rng.min_row - 1, rng.min_col - 1
+        if r0 >= len(rows) or c0 >= len(rows[r0]):
+            continue
+        value = rows[r0][c0]
+        for r in range(r0, min(rng.max_row, len(rows))):
+            row = rows[r]
+            if len(row) < rng.max_col:
+                row.extend([None] * (rng.max_col - len(row)))
+            for c in range(c0, rng.max_col):
+                if row[c] is None:
+                    row[c] = value
+    return [tuple(r) for r in rows]
+
+
 def _open_table(path: str | os.PathLike[str], keywords: Sequence[str],
                 rules: Sequence[ColumnRule], issues: IssueCollector,
                 ignored: Predicate | None = None) -> _Table:
@@ -91,25 +110,35 @@ def _open_table(path: str | os.PathLike[str], keywords: Sequence[str],
 
     path_str = os.fspath(path)
     try:
-        wb = openpyxl.load_workbook(path_str, read_only=True, data_only=True)
+        # Not read-only: merged-cell ranges are only available on normal worksheets (a PWR name
+        # merged over several decap rows is common in hand-made sheets).
+        wb = openpyxl.load_workbook(path_str, read_only=False, data_only=True)
     except Exception as exc:  # noqa: BLE001 - any openpyxl/zip/IO error
         err = issues.error("E_XL_OPEN", f"Cannot open Excel file: {exc}", path_str)
         raise InputError([err]) from exc
     try:
-        sheet_name = None
+        # §4.1 sheet choice (first keyword sheet, else the active sheet); if that sheet has no
+        # recognisable header, the remaining sheets are tried in workbook order.
+        candidates: list[str] = []
         for name in wb.sheetnames:
-            norm = normalize_sheet_name(name)
-            if any(k in norm for k in keywords):
-                sheet_name = name
+            if any(k in normalize_sheet_name(name) for k in keywords):
+                candidates.append(name)
                 break
-        ws = wb[sheet_name] if sheet_name is not None else wb.active
-        if ws is None:  # pragma: no cover - workbook without sheets
-            ws = wb[wb.sheetnames[0]]
-        sheet_name = ws.title
-        all_rows = [tuple(r) for r in ws.iter_rows(values_only=True)]
+        active = wb.active.title if wb.active is not None else wb.sheetnames[0]
+        for name in [active, *wb.sheetnames]:
+            if name not in candidates:
+                candidates.append(name)
+        sheets = {name: _sheet_rows(wb[name]) for name in candidates}
     finally:
         wb.close()
 
+    header = None
+    sheet_name = candidates[0]
+    all_rows = sheets[sheet_name]
+    for name in candidates:
+        if find_header_row(sheets[name], rules, IssueCollector(), name, ignored) is not None:
+            sheet_name, all_rows = name, sheets[name]
+            break
     header = find_header_row(all_rows, rules, issues, sheet_name, ignored)
     if header is None:
         raise InputError([issues.issues[-1]])

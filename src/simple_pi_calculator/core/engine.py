@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
@@ -18,6 +19,8 @@ from simple_pi_calculator.core.stackup import Stackup, check_pwr_layers
 from simple_pi_calculator.core.types import DecapRow, resolve_model_path
 from simple_pi_calculator.core.via import ViaSettings, validate_via_settings
 from simple_pi_calculator.errors import InputError, Issue, IssueCollector
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "ProjectInputs",
@@ -45,6 +48,9 @@ class ProjectInputs:
     project_dir: str | None = None
     model_search_dir: str | None = None
     s2p_default_mode: str = "series"
+    #: folder of the decap-list Excel file: first relative candidate of §4.4 (the GUI table uses
+    #: the same order, so a row shown as resolved must also resolve at compute time)
+    decap_source_dir: str | None = None
     marker_f_hz: tuple[float, ...] = field(default=MARKER_FREQUENCIES_HZ)
 
 
@@ -106,7 +112,7 @@ def _validate_pwr(inputs: ProjectInputs, pwr: PwrSpec, issues: IssueCollector) -
         if int(row.count) < 1:
             issues.error("E_DECAP_COUNT", f"Decap row {row.model_file!r}: count must be ≥ 1.",
                          source)
-        path = resolve_model_path(row.model_file, None, inputs.project_dir,
+        path = resolve_model_path(row.model_file, inputs.decap_source_dir, inputs.project_dir,
                                   inputs.model_search_dir)
         if path is None:
             issues.error("E_DECAP_FILE_NOT_FOUND", f"Decap model file not found: "
@@ -193,6 +199,11 @@ def compute_project(inputs: ProjectInputs,
             for i in exc.issues:
                 if id(i) not in known:
                     pwr_issues.issues.append(i)
+        except Exception as exc:  # noqa: BLE001 - isolate unexpected failures per PWR (§5.2)
+            log.exception("Computation of PWR %s failed", pwr.name)
+            pwr_issues.error("E_PWR_INTERNAL", f"PWR {pwr.name}: unexpected error "
+                             f"({type(exc).__name__}: {exc}); other PWRs are not affected. "
+                             "See the log file for details.", f"PWR:{pwr.name}")
         finally:
             for i in pwr_issues.issues:
                 src = i.source or f"PWR:{pwr.name}"

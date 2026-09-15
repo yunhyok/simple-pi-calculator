@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         self._use_settings = use_settings
         self._auto_compute = auto_compute
         self._applying = 0
+        self._edited_during_compute = False
         self.help_window: HelpWindow | None = None
         self.plots: dict[str, ImpedancePlot] = {}
 
@@ -487,6 +488,9 @@ class MainWindow(QMainWindow):
         if self._applying:
             return
         self.modified = True
+        if self.is_computing():
+            # the running computation uses a snapshot of the old inputs (§5.4)
+            self._edited_during_compute = True
         if self.results and not self.stale:
             self.stale = True
             for plot in self._all_plots():
@@ -1161,6 +1165,7 @@ class MainWindow(QMainWindow):
         thread.finished.connect(self._on_thread_finished)
         self._thread = thread
         self._worker = worker
+        self._edited_during_compute = False
         self.progress_bar.setValue(0)
         self.progress_bar.setVisible(True)
         self.statusBar().showMessage("Computing…")
@@ -1178,6 +1183,17 @@ class MainWindow(QMainWindow):
         self.message_dock.set_issues("compute", [Issue(code, Severity.ERROR, message)])
         self.message_dock.show()
         self.statusBar().showMessage(message, 10000)
+
+    def report_internal_error(self, summary: str, trace: str, log_path: str | None = None) -> None:
+        """Non-modal report of an uncaught exception (installed by ``app.install_excepthook``)."""
+        where = f" Details in the log file: {log_path}" if log_path else ""
+        issue = Issue("E_INTERNAL", Severity.ERROR,
+                      f"Unexpected internal error: {summary}. The action was not completed; "
+                      f"your inputs are kept (auto-saved).{where}",
+                      None, trace.strip().splitlines()[-1] if trace.strip() else None)
+        self.message_dock.add_issues("internal", [issue])
+        self.message_dock.show()
+        self.statusBar().showMessage(f"Internal error: {summary}", 15000)
 
     def _focus_first_error(self, issues: Sequence[Issue]) -> None:
         for issue in issues:
@@ -1219,6 +1235,10 @@ class MainWindow(QMainWindow):
         if any(i.severity is not Severity.INFO for i in issues):
             self.message_dock.show()
         self.show_results(results)
+        if self._edited_during_compute and self.results:
+            self.stale = True
+            for plot in self._all_plots():
+                plot.set_stale(True)
         if self.last_compute_s is not None:
             self.time_label.setText(f"Last compute: {self.last_compute_s:.2f} s")
         self.statusBar().showMessage(f"Computed {len(results)} PWR net(s).", 6000)
@@ -1397,7 +1417,7 @@ class MainWindow(QMainWindow):
         for r, (res, row) in enumerate(zip(results, values)):
             table.setVerticalHeaderItem(r, QTableWidgetItem(res.name))
             for c, val in enumerate(row):
-                item = QTableWidgetItem("—" if val is None else format_sig(val, 4))
+                item = QTableWidgetItem("n/a" if val is None else format_sig(val, 4))
                 item.setTextAlignment((Qt.AlignmentFlag.AlignRight
                                           | Qt.AlignmentFlag.AlignVCenter))
                 if val is not None:

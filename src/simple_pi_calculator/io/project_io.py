@@ -605,7 +605,8 @@ def _read_json(path: str) -> Any:
     try:
         with open(path, "rb") as fh:
             raw = fh.read()
-        return json.loads(raw.decode("utf-8"))
+        # utf-8-sig: tolerate a BOM added by Windows editors (Notepad) when a user edits the file
+        return json.loads(raw.decode("utf-8-sig"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ProjectFormatError(f"The file is not valid UTF-8 JSON: {exc}", path) from exc
 
@@ -733,6 +734,9 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
         project_dir=os.path.dirname(os.path.abspath(project_path)) if project_path else None,
         model_search_dir=a.model_search_dir,
         s2p_default_mode=a.s2p_default_mode,
+        decap_source_dir=(os.path.dirname(project.decap_source_path)
+                          if project.decap_source_path and os.path.isabs(project.decap_source_path)
+                          else None),
     )
 
 

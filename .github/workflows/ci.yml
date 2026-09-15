@@ -10,12 +10,13 @@ jobs:
     name: Test (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install Qt/X11 runtime libraries for offscreen PySide6
         run: |
@@ -41,16 +42,10 @@ jobs:
 
       - name: Install package (dev extras)
         run: |
-          pip install --upgrade pip
-          if pip install -e ".[dev]"; then
-            echo "installed via [dev] extra"
-          else
-            echo "[dev] extra not available; installing explicit test deps"
-            pip install -e .
-            pip install pytest pytest-qt
-          fi
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
 
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: pytest -q
+        run: python -m pytest -q

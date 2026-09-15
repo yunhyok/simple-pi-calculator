@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import numpy as np
-from PySide6.QtCore import QRectF, QSignalBlocker, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -76,6 +76,54 @@ def _setup_table(view: QTableView) -> None:
     view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
     view.horizontalHeader().setStretchLastSection(True)
     view.verticalHeader().setDefaultSectionSize(22)
+
+
+class _FillColumn(QObject):
+    """Keeps ``column`` as wide as the viewport space left by ``primary`` columns (min width).
+
+    Unlike ``QHeaderView.Stretch`` this still works when further (derived) columns follow and
+    the table scrolls horizontally: the primary columns always fit the visible width.
+    """
+
+    def __init__(self, view: QTableView, column: int, primary: Sequence[int],
+                 minimum: int = 120):
+        super().__init__(view)
+        self.view, self.column, self.primary, self.minimum = view, column, list(primary), minimum
+        view.viewport().installEventFilter(self)
+        view.horizontalHeader().sectionResized.connect(self._on_section_resized)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Resize:
+            QTimer.singleShot(0, self.apply)
+        return False
+
+    def _on_section_resized(self, index: int, _old: int, _new: int) -> None:
+        if index != self.column and index in self.primary:
+            QTimer.singleShot(0, self.apply)
+
+    def apply(self) -> None:
+        header = self.view.horizontalHeader()
+        used = sum(header.sectionSize(c) for c in self.primary if c != self.column)
+        width = max(self.minimum, self.view.viewport().width() - used - 1)
+        if header.sectionSize(self.column) != width:
+            header.resizeSection(self.column, width)
+
+
+def size_columns(view: QTableView, fill: int, fit: Sequence[int],
+                 primary: Sequence[int] | None = None, minimum: int = 120) -> None:
+    """Column sizing: ``fit`` columns ResizeToContents; ``fill`` takes the viewport width left by
+    the ``primary`` columns (default: all); other columns interactive; last section not
+    stretched."""
+    header = view.horizontalHeader()
+    header.setStretchLastSection(False)
+    header.setMinimumSectionSize(28)
+    n = view.model().columnCount()
+    for col in range(n):
+        mode = (QHeaderView.ResizeMode.ResizeToContents if col in fit
+                else QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(col, mode)
+    view._fill_column = _FillColumn(view, fill, primary if primary is not None else range(n),
+                                    minimum)
 
 
 def selected_source_rows(view: QTableView) -> list[int]:
@@ -205,6 +253,9 @@ class StackupPanel(QWidget):
         self.table.setModel(model)
         self.table.setItemDelegateForColumn(StackupTableModel.COL_NUMBER,
                                             SpinDelegate(self.table, 1, 999))
+        size_columns(self.table, StackupTableModel.COL_NAME,
+                     [c for c in range(model.columnCount()) if c != StackupTableModel.COL_NAME],
+                     minimum=80)
         self.preview = StackupPreview(model, splitter)
         splitter.addWidget(self.table)
         splitter.addWidget(self.preview)
@@ -362,8 +413,10 @@ class ViaPanel(QWidget):
         v.antipad_diameter_mm = float(self.antipad.value())
         v.via_pitch_mm = float(self.pitch.value())
         vpd = int(self.vias_per_decap.value())
-        if vpd % 2:
+        if vpd % 2:  # typed odd value: round up to the next even count and show it (§2.6.4)
             vpd += 1
+            with QSignalBlocker(self.vias_per_decap):
+                self.vias_per_decap.setValue(vpd)
         v.vias_per_decap = vpd
         v.pad_via_count = int(self.pad_vias.value())
         a.via_model = str(self.via_model.currentData() or "pair")
@@ -424,6 +477,9 @@ class PwrPanel(QWidget):
                                             SpinDelegate(self.table, 1, 999))
         self.table.setItemDelegateForColumn(PwrTableModel.COL_WIDTH,
                                             DoubleSpinDelegate(self.table, 0.0, 10000.0, 3, 1.0))
+        size_columns(self.table, PwrTableModel.COL_NAME,
+                     [c for c in range(model.columnCount()) if c != PwrTableModel.COL_NAME],
+                     minimum=80)
         self.preview = PlacementPreview(splitter)
         splitter.addWidget(self.table)
         splitter.addWidget(self.preview)
@@ -530,7 +586,10 @@ class DecapPanel(QWidget):
                                             SpinDelegate(self.table, 1, 100000))
         self.table.setItemDelegateForColumn(DecapTableModel.COL_DIST,
                                             DoubleSpinDelegate(self.table, 0.0, 10000.0, 3, 0.5))
-        self.table.setColumnWidth(DecapTableModel.COL_FILE, 170)
+        primary = list(range(DecapTableModel.COL_MODE + 1))
+        size_columns(self.table, DecapTableModel.COL_FILE,
+                     [c for c in range(model.columnCount()) if c != DecapTableModel.COL_FILE],
+                     primary=primary, minimum=110)
         layout.addWidget(self.table, 1)
         self.last_preview: DecapModelPreviewDialog | None = None
 

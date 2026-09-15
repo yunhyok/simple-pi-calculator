@@ -65,6 +65,7 @@ class _BaseTableModel(QAbstractTableModel):
 
     edited = Signal()
     HEADERS: tuple[str, ...] = ()
+    HEADER_TIPS: tuple[str, ...] = ()   #: full column names shown as header tooltips
     EDITABLE: frozenset[int] = frozenset()
     CHECK_COLUMNS: frozenset[int] = frozenset()
     DERIVED: frozenset[int] = frozenset()
@@ -79,9 +80,11 @@ class _BaseTableModel(QAbstractTableModel):
                 return self.HEADERS[section]
             if orientation == Qt.Orientation.Vertical:
                 return str(section + 1)
-        if (role == Qt.ItemDataRole.ToolTipRole and orientation == Qt.Orientation.Horizontal
-                and section in self.DERIVED):
-            return "Derived (read-only)"
+        if role == Qt.ItemDataRole.ToolTipRole and orientation == Qt.Orientation.Horizontal:
+            tip = self.HEADER_TIPS[section] if 0 <= section < len(self.HEADER_TIPS) else ""
+            if section in self.DERIVED:
+                tip = f"{tip} — derived (read-only)" if tip else "Derived (read-only)"
+            return tip or None
         return None
 
     def flags(self, index: Index) -> Qt.ItemFlag:
@@ -106,6 +109,11 @@ class StackupTableModel(_BaseTableModel):
 
     HEADERS = ("Layer #", "Name", "Type", "Thickness (mm)", "σ (S/m)", "Dk", "Df",
                "z_top (mm)")
+    HEADER_TIPS = ("Layer number (1 = top)", "Layer name",
+                   "Metal (σ > 0) or Dielectric (σ empty or 0)", "Thickness (mm)",
+                   "Conductivity σ (S/m); empty for dielectric layers",
+                   "Relative permittivity Dk", "Loss tangent Df",
+                   "Depth of the layer top below the top surface (mm)")
     COL_NUMBER, COL_NAME, COL_TYPE, COL_THICK, COL_SIGMA, COL_DK, COL_DF, COL_ZTOP = range(8)
     EDITABLE = frozenset({0, 1, 3, 4, 5, 6})
     DERIVED = frozenset({2, 7})
@@ -240,11 +248,13 @@ class StackupTableModel(_BaseTableModel):
         return pos
 
     def remove_rows(self, rows: list[int]) -> None:
-        for row in sorted(set(rows), reverse=True):
-            if 0 <= row < len(self._rows):
-                self.beginRemoveRows(QModelIndex(), row, row)
-                del self._rows[row]
-                self.endRemoveRows()
+        valid = sorted({r for r in rows if 0 <= r < len(self._rows)}, reverse=True)
+        if not valid:  # nothing selected: not an edit (no modified marker, no auto-save)
+            return
+        for row in valid:
+            self.beginRemoveRows(QModelIndex(), row, row)
+            del self._rows[row]
+            self.endRemoveRows()
         self.edited.emit()
 
 
@@ -254,9 +264,13 @@ class StackupTableModel(_BaseTableModel):
 class PwrTableModel(_BaseTableModel):
     """PWR nets with derived geometry columns (§5.5 tab 3)."""
 
-    HEADERS = ("Enabled", "PWR Name", "Layer Number", "GND Layer Number",
-               "PWR Plane Width (mm)", "D_ref (mm)", "Height (mm)", "Ports", "d (mm)",
-               "εr_eff", "C_plane (pF)")
+    HEADERS = ("On", "PWR Name", "PWR Layer", "GND Layer", "Width (mm)", "D_ref (mm)",
+               "H (mm)", "Ports", "d (mm)", "εr_eff", "C_plane (pF)")
+    HEADER_TIPS = ("Enabled", "PWR Name", "Layer Number (PWR plane layer)", "GND Layer Number",
+                   "PWR Plane Width (mm)", "Reference distance D_ref = max decap distance (mm)",
+                   "Derived plane height H = 1.4 · D_ref (mm)", "Number of decap ports",
+                   "PWR–GND plane separation d (mm)", "Effective relative permittivity",
+                   "Plane capacitance of the synthetic W × H plane (pF)")
     (COL_ENABLED, COL_NAME, COL_LAYER, COL_GND, COL_WIDTH, COL_DREF, COL_HEIGHT, COL_PORTS,
      COL_D, COL_ER, COL_CPLANE) = range(11)
     EDITABLE = frozenset({1, 2, 3, 4})
@@ -447,11 +461,13 @@ class PwrTableModel(_BaseTableModel):
         return pos
 
     def remove_rows(self, rows: list[int]) -> None:
-        for row in sorted(set(rows), reverse=True):
-            if 0 <= row < len(self.rows):
-                self.beginRemoveRows(QModelIndex(), row, row)
-                del self.rows[row]
-                self.endRemoveRows()
+        valid = sorted({r for r in rows if 0 <= r < len(self.rows)}, reverse=True)
+        if not valid:
+            return
+        for row in valid:
+            self.beginRemoveRows(QModelIndex(), row, row)
+            del self.rows[row]
+            self.endRemoveRows()
         self.refresh_derived()
         self.edited.emit()
 
@@ -500,14 +516,20 @@ class DecapModelInfo:
 class DecapTableModel(_BaseTableModel):
     """Decap assignment rows (§5.5 tab 4)."""
 
-    HEADERS = ("Enabled", "PWR Name", "Decap File Name", "Subckt", "S2P Mode",
-               "Number of Decaps", "Distance to PAD (mm)", "Dummy Cap", "Via sets",
-               "C @100 kHz", "SRF (MHz)")
-    (COL_ENABLED, COL_PWR, COL_FILE, COL_SUBCKT, COL_MODE, COL_COUNT, COL_DIST, COL_DUMMY,
+    HEADERS = ("Enabled", "PWR Name", "Decap File Name", "# Decaps", "Dist. to PAD (mm)",
+               "Dummy Cap", "Subckt", "S2P Mode", "Via sets", "C @100 kHz", "SRF (MHz)")
+    HEADER_TIPS = ("Enabled", "PWR Name", "Decap File Name (.mod / .s2p model)",
+                   "Number of Decaps", "Distance to PAD (mm)",
+                   "Dummy Cap: half of the capacitors share the via set of a neighbour",
+                   "SPICE subcircuit name (empty = first/only subcircuit)",
+                   "S2P Mode: series or shunt (empty = project default)",
+                   "Via sets (cavity ports) of the row", "Capacitance at 100 kHz",
+                   "Self-resonance frequency (MHz)")
+    (COL_ENABLED, COL_PWR, COL_FILE, COL_COUNT, COL_DIST, COL_DUMMY, COL_SUBCKT, COL_MODE,
      COL_PORTS, COL_C, COL_SRF) = range(11)
-    EDITABLE = frozenset({1, 2, 3, 4, 5, 6})
-    CHECK_COLUMNS = frozenset({0, 7})
-    DERIVED = frozenset({8, 9, 10})
+    EDITABLE = frozenset({COL_PWR, COL_FILE, COL_COUNT, COL_DIST, COL_SUBCKT, COL_MODE})
+    CHECK_COLUMNS = frozenset({COL_ENABLED, COL_DUMMY})
+    DERIVED = frozenset({COL_PORTS, COL_C, COL_SRF})
     FULL_PATH_ROLE = Qt.ItemDataRole.UserRole + 1
 
     def __init__(self, project: Any, context: Callable[[], tuple[str | None, str | None]],
@@ -613,8 +635,8 @@ class DecapTableModel(_BaseTableModel):
             if col == self.COL_DUMMY:
                 return ("Dummy Cap: half of the capacitors share the via set of a neighbour "
                         "(ceil(N/2) via sets).")
-        if role == Qt.ItemDataRole.TextAlignmentRole and col >= self.COL_COUNT and \
-                col != self.COL_DUMMY:
+        if role == Qt.ItemDataRole.TextAlignmentRole and col in (
+                self.COL_COUNT, self.COL_DIST, self.COL_PORTS, self.COL_C, self.COL_SRF):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return None
 
@@ -673,11 +695,13 @@ class DecapTableModel(_BaseTableModel):
         return pos
 
     def remove_rows(self, rows: list[int]) -> None:
-        for row in sorted(set(rows), reverse=True):
-            if 0 <= row < len(self.rows):
-                self.beginRemoveRows(QModelIndex(), row, row)
-                del self.rows[row]
-                self.endRemoveRows()
+        valid = sorted({r for r in rows if 0 <= r < len(self.rows)}, reverse=True)
+        if not valid:
+            return
+        for row in valid:
+            self.beginRemoveRows(QModelIndex(), row, row)
+            del self.rows[row]
+            self.endRemoveRows()
         self.edited.emit()
 
     def rename_pwr(self, old: str, new: str) -> None:

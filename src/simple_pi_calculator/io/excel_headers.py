@@ -101,12 +101,19 @@ def _p_conductivity(base: str, unit: str | None) -> bool:
     return _has(base, "conduct", "sigma") or unit == "s/m"
 
 
+#: "Dk@1GHz" normalises to "dk1ghz", "Df 10 GHz" to "df10ghz": accept a frequency qualifier
+_DK_QUALIFIED_RE = re.compile(r"^(dk|er|epsr)\d")
+_DF_QUALIFIED_RE = re.compile(r"^(df|tand|tandelta)\d")
+
+
 def _p_dk(base: str, unit: str | None) -> bool:
-    return base in {"dk", "er", "epsr", "eps"} or _has(base, "permittivity", "dielectricconstant")
+    return (base in {"dk", "er", "epsr", "eps"} or _has(base, "permittivity", "dielectricconstant")
+            or bool(_DK_QUALIFIED_RE.match(base)))
 
 
 def _p_df(base: str, unit: str | None) -> bool:
-    return base in {"df", "tand", "tandelta", "losstangent"} or _has(base, "dissipation", "losstan")
+    return (base in {"df", "tand", "tandelta", "losstangent"} or _has(base, "dissipation", "losstan")
+            or bool(_DF_QUALIFIED_RE.match(base)))
 
 
 STACKUP_RULES: tuple[ColumnRule, ...] = (

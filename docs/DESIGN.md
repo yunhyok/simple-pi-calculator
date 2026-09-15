@@ -2620,3 +2620,49 @@ explanations for every code in its area.
 | F16 dummy-cap topology verified | NOTE | Acknowledged; inter-pair mutual inductance remains a documented limitation (optimistic). | §9 item 5 |
 
 No review item is rejected.
+
+## Appendix D — Implementation notes (v0.1.0, from the code review)
+
+Deviations and clarifications found while reviewing the implementation against this document
+(details in `docs/REVIEW-code.md`). The normative text above is unchanged.
+
+1. **§3.1 markers.** Implemented exactly as specified: Z is evaluated on the union of the grid and
+   the in-range marker frequencies and the marker readouts are the exact values (no interpolation).
+   Markers within rel 1e-12 of a grid point reuse that point. The readout table shows `n/a` for a
+   marker outside the sweep.
+2. **§8.4 #5.** The first x of sub-row 2 is m_x + 0.5·L_x/32 = **1.233350 mm** (the printed
+   1.233355 mm is a typo); the tests use 1.233350 mm.
+3. **Additional issue codes** (not in Appendix A): `E_DECAP_COUNT`, `E_DECAP_FILE_READ` (model file
+   exists but cannot be read), `E_PWR_INTERNAL` (unexpected exception while computing one PWR; the
+   other PWRs still compute), `E_INTERNAL` (uncaught GUI exception, reported in the Messages dock),
+   `E_VIA_DRILL`, `E_VIA_MODEL`, `E_VIA_PLATING`, `E_VIA_SIGMA`, `E_VIA_MOUNT_L`, `E_XL_OPEN`,
+   `E_XL_READ`, `E_XL_MISSING_VALUE`, `E_XL_MODE`, `E_S2P_MODE`, `E_SPICE_SYNTAX`, `E_SPICE_VALUE`,
+   `E_SPICE_K`, `W_SPICE_NEGATIVE_R`, `W_DECAP_PWR_UNKNOWN`, `W_PROJECT_VALUE`,
+   `I_PROJECT_SESSION_IGNORED`, and the GUI-only `E_ENGINE_UNAVAILABLE`, `E_INPUTS`, `E_VALIDATION`,
+   `E_COMPUTE_FAILED`, `I_COMPUTE_CANCELLED`.
+4. **§4.1 Excel reading** is more tolerant than specified: the workbook is opened with
+   `read_only=False` so that merged cell ranges can be filled with their top-left value; if the
+   keyword/active sheet has no header row the remaining sheets are tried; Dk/Df headers with a
+   frequency qualifier (`Dk@1GHz`, `Df 10GHz`) match; the length units `mils`, `thou`, `micron(s)`
+   and `inches` are accepted in addition to the listed ones.
+5. **§4.4 path resolution** is applied identically in the GUI table and in the engine:
+   `ProjectInputs` carries `decap_source_dir` (folder of the decap Excel file) as the first relative
+   candidate.
+6. **§4.7** Project and auto-save files with a UTF-8 BOM are accepted.
+7. **§5.7 logging / uncaught exceptions.** The log file is `<auto-save folder>/logs/app.log`
+   (`%APPDATA%\SimplePICalculator\logs` on Windows, not `%LOCALAPPDATA%`). Uncaught exceptions
+   (including exceptions raised in Qt slots) are logged and reported non-modally as `E_INTERNAL` in
+   the Messages dock and status bar instead of a modal message box, which could re-trigger a failing
+   paint/timer slot.
+8. **§5.4** Edits made while a computation runs mark the returned results stale
+   ("(inputs changed)"), because the worker computed a snapshot of the previous inputs.
+9. **§7.1 / §7.4 packaging.** `collect_submodules("pyqtgraph")` is filtered to skip
+   `pyqtgraph.examples` (importing it starts a QApplication and aborts or hangs the collector),
+   `opengl` and `jupyter`; the package's own modules are listed explicitly because the engine is
+   imported lazily. `--self-test` additionally checks every help page and image, the icon and the
+   examples folder, computes the example project, creates the main window (offscreen-safe) and
+   accepts `--self-test-report PATH`, because the windowed (`console=False`) executable has no
+   stdout; CI waits with `WaitForExit(120000)` and prints the report file. The installer file name
+   is `SimplePICalculator-Setup-<version>.exe` (README/RELEASING) rather than §7.2's
+   `…-<version>-win64-setup`. The Windows workflow's test job runs on Windows only; Ubuntu tests run
+   in `ci.yml`.

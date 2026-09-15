@@ -106,7 +106,8 @@ background; hover for the message. Errors in one PWR net never stop the computat
 <h3><a name="decap"></a>Decap rows and placement</h3>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
-<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>Model file not found.</td><td rowspan="8"><a href="input_decaps.html#messages">Decap list</a></td></tr>
+<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>Model file not found.</td><td rowspan="9"><a href="input_decaps.html#messages">Decap list</a></td></tr>
+<tr><td><code>E_DECAP_FILE_READ</code></td><td>Model file exists but cannot be read.</td></tr>
 <tr><td><code>E_DECAP_FILE_TYPE</code></td><td>Unsupported model file extension.</td></tr>
 <tr><td><code>E_DECAP_DISTANCE</code></td><td>Distance to PAD ≤ 0.</td></tr>
 <tr><td><code>E_DREF_TOO_SMALL</code></td><td>Largest distance too small for the PAD port to fit in the plane.</td></tr>
@@ -179,9 +180,13 @@ background; hover for the message. Errors in one PWR net never stop the computat
 </table>
 
 <h2><a name="log"></a>Log file</h2>
-<p>Unexpected program errors are shown in a dialog with the technical details and written to a log file:</p>
+<p>Unexpected program errors are listed in the Messages dock as <code>E_INTERNAL</code> (the program keeps
+running and your inputs stay auto-saved); an unexpected error while computing one PWR net is reported as
+<code>E_PWR_INTERNAL</code> for that net only. The technical details are written to a log file in the
+auto-save folder (<b>File ▸ Show Auto-save Folder</b>):</p>
 <pre>
-Windows:  %LOCALAPPDATA%\SimplePICalculator\logs\app.log
+Windows:  %APPDATA%\SimplePICalculator\logs\app.log
+Linux:    ~/.local/share/SimplePICalculator/logs/app.log
 </pre>
 <p>When reporting a problem, include this file, the project (<b>File ▸ Save As</b>) and the model/Excel files it uses.</p>
 

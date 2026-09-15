@@ -44,6 +44,12 @@ LENGTH_UNIT_TO_MM: dict[str, float] = {
     "m": 1000.0,
     "in": 25.4,
     "inch": 25.4,
+    # common spellings in hand-made sheets (§4.1 lists the canonical ones above)
+    "mils": 0.0254,
+    "thou": 0.0254,
+    "micron": 1.0e-3,
+    "microns": 1.0e-3,
+    "inches": 25.4,
 }
 
 

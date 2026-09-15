@@ -80,7 +80,8 @@ class Netlist:
 
 def read_spice_source(path: str | os.PathLike) -> str:
     """Read a model file as UTF-8 (BOM tolerated); fall back to Latin-1 on decode errors (§4.5)."""
-    raw = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        raw = fh.read()
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:

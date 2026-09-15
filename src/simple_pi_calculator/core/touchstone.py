@@ -168,7 +168,8 @@ def parse_s2p_text(text: str, issues: IssueCollector, source: str = "<text>") ->
 
 def read_s2p(path: str | os.PathLike, issues: IssueCollector) -> TwoPortData:
     """Read a Touchstone v1 ``.s2p`` file (§4.6)."""
-    raw = open(path, "rb").read()
+    with open(path, "rb") as fh:
+        raw = fh.read()
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:

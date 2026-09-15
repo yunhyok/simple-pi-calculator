@@ -111,15 +111,19 @@ def load_decap_model(path: str | os.PathLike, subckt: str | None, s2p_mode: str 
         issue = issues.error("E_DECAP_FILE_NOT_FOUND", f"decap model file not found: {p}", p)
         raise InputError([issue])
     ext = os.path.splitext(p)[1].lower()
-    if ext in SPICE_EXTENSIONS:
-        return SpiceDecapModel(parse_spice_file(p, subckt, issues))
-    if ext in S2P_EXTENSIONS:
-        try:
-            mode = normalize_s2p_mode(s2p_mode)
-        except ValueError as exc:
-            issue = issues.error("E_S2P_MODE", str(exc), p)
-            raise InputError([issue]) from None
-        return S2pDecapModel(read_s2p(p, issues), mode, issues)
+    try:
+        if ext in SPICE_EXTENSIONS:
+            return SpiceDecapModel(parse_spice_file(p, subckt, issues))
+        if ext in S2P_EXTENSIONS:
+            try:
+                mode = normalize_s2p_mode(s2p_mode)
+            except ValueError as exc:
+                issue = issues.error("E_S2P_MODE", str(exc), p)
+                raise InputError([issue]) from None
+            return S2pDecapModel(read_s2p(p, issues), mode, issues)
+    except OSError as exc:  # permission denied, file locked, vanished between check and read
+        issue = issues.error("E_DECAP_FILE_READ", f"cannot read decap model file {p}: {exc}", p)
+        raise InputError([issue]) from None
     issue = issues.error("E_DECAP_FILE_TYPE",
                          f"unsupported decap model file type {ext or '(none)'!r}: {p} "
                          f"(expected {', '.join(SPICE_EXTENSIONS + S2P_EXTENSIONS)})", p)

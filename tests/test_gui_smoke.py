@@ -517,3 +517,85 @@ def test_self_test_cli(tmp_path):
                           env=env, capture_output=True, text=True, timeout=120)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert list(appdata.iterdir()) == []
+
+
+# ---------------------------------------------------------------------------------------------
+# regression tests from the pre-release code review (docs/REVIEW-code.md)
+# ---------------------------------------------------------------------------------------------
+def test_uncaught_exception_goes_to_messages_dock_not_modal(make_window, monkeypatch):
+    from simple_pi_calculator import app as app_mod
+
+    w = make_window()
+    hook = app_mod.make_excepthook("/tmp/app.log", window_getter=lambda: w)
+    monkeypatch.setattr(sys, "__excepthook__", lambda *a: pytest.fail("fell through"))
+    try:
+        raise ValueError("slot exploded")
+    except ValueError:
+        hook(*sys.exc_info())
+    issues = w.message_dock.issues("internal")
+    assert [i.code for i in issues] == ["E_INTERNAL"]
+    assert "slot exploded" in issues[0].message and "/tmp/app.log" in issues[0].message
+    assert w.message_dock.isVisible()
+    # the real lookup finds the window among the top-level widgets
+    assert app_mod._find_main_window() is not None
+
+
+def test_remove_without_selection_is_not_an_edit(make_window):
+    w = make_window()
+    w.open_project(str(EXAMPLE))
+    assert not w.isWindowModified()
+    for model in (w.stackup_model, w.pwr_model, w.decap_model):
+        model.remove_rows([])
+        model.remove_rows([99])
+    assert not w.isWindowModified()
+    assert w.decap_model.rowCount() == 4
+    w.decap_model.remove_rows([0])
+    assert w.decap_model.rowCount() == 3 and w.isWindowModified()
+
+
+def test_odd_vias_per_decap_is_rounded_and_shown(make_window):
+    w = make_window()
+    w.via_panel.vias_per_decap.setValue(3)
+    assert w.project.vias.vias_per_decap == 4
+    assert w.via_panel.vias_per_decap.value() == 4
+
+
+def test_edit_during_compute_marks_results_stale(make_window, qtbot):
+    bridge = FakeBridge(delay_s=0.5)
+    w = make_window(engine=bridge)
+    w.open_project(str(EXAMPLE))
+    with qtbot.waitSignal(w.computeFinished, timeout=10000):
+        assert w.start_compute()
+        assert bridge.started.wait(5)
+        w.via_panel.drill.setValue(0.3)  # edited while the snapshot is being computed
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=5000)
+    assert w.results and w.stale
+    assert w.plots["VDD_CORE"].title_text().endswith("(inputs changed)")
+    # a clean recompute clears the flag
+    with qtbot.waitSignal(w.computeFinished, timeout=10000):
+        assert w.start_compute()
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=5000)
+    assert not w.stale
+
+
+def test_markers_outside_sweep_read_na(make_window):
+    w = make_window()
+    res = fake_result("A")
+    res.marker_f_hz = np.asarray([1e6])
+    res.marker_z = np.asarray([1e-3 + 0j])
+    w.show_results([res])
+    assert [w.readout_table.item(0, c).text() for c in range(3)][1:] == ["n/a", "n/a"]
+
+
+def test_self_test_report_file(tmp_path):
+    report = tmp_path / "self test ü.txt"
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen", SPICAL_APPDATA_DIR=str(tmp_path / "ad"))
+    env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run([sys.executable, "-m", "simple_pi_calculator", "--self-test",
+                           "--self-test-report", str(report)],
+                          env=env, capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    text = report.read_text("utf-8")
+    assert text.rstrip().endswith("SELF-TEST OK")
+    assert "help pages checked" in text and "VDD_IO: |Z|" in text
+    assert not (tmp_path / "ad").exists()

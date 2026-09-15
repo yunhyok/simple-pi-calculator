@@ -133,6 +133,7 @@ Identical models (same file, subcircuit and S2P mode) are computed only once.</p
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="24%">Code</th><th>Meaning</th><th width="34%">What to do</th></tr>
 <tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>The model file was not found in any search location.</td><td>Correct the path, or set the Model search folder.</td></tr>
+<tr><td><code>E_DECAP_FILE_READ</code></td><td>The model file exists but cannot be read (no permission, locked by another program).</td><td>Close the other program or copy the file to a readable folder.</td></tr>
 <tr><td><code>E_DECAP_FILE_TYPE</code></td><td>Unsupported file extension.</td><td>Use a SPICE extension or <code>.s2p</code>; rename <code>.txt</code> models.</td></tr>
 <tr><td><code>E_DECAP_DISTANCE</code></td><td>Distance is zero or negative.</td><td>Enter the distance in mm (&gt; 0).</td></tr>
 <tr><td><code>E_DREF_TOO_SMALL</code></td><td>The largest distance is so small that the PAD port does not fit inside the plane (0.2 × D_ref &lt; half the PAD port width), or the PAD port is wider than the plane.</td><td>Distances below about 0.6 mm are not meaningful with a 0.2 mm drill; increase the distance or W.</td></tr>

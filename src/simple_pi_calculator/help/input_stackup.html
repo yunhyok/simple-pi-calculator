@@ -69,7 +69,8 @@ Metal rows are copper coloured, dielectric rows green.</p>
 <h2><a name="headers"></a>How headers are recognised</h2>
 <p>Header texts are matched tolerantly, so files from different CAM tools usually import without editing:</p>
 <ol>
-<li><b>Sheet:</b> the first sheet whose name contains <code>stack</code>; otherwise the sheet that was active when the file was saved.</li>
+<li><b>Sheet:</b> the first sheet whose name contains <code>stack</code>; otherwise the sheet that was active when the file was saved.
+If that sheet has no recognisable header row (e.g. a cover or notes sheet), the other sheets are tried in workbook order.</li>
 <li><b>Header row:</b> rows 1 to 20 are scanned; the header row is the first row in which all required
 columns are found. Title rows above the header are therefore allowed.</li>
 <li><b>Normalisation:</b> each header cell is converted to lower case; <code>µ</code>/<code>μ</code> becomes
@@ -81,15 +82,16 @@ punctuation are removed; text in <code>( )</code> or <code>[ ]</code> is taken a
 number), then Layer number, Thickness, Conductivity, Dk, Df. Each header cell is used for one field only.
 If two cells match the same field, the second one is ignored with <code>W_XL_DUP_COLUMN</code>.</li>
 <li><b>Data rows:</b> all rows below the header; completely empty rows are skipped; reading stops at the
-first row where all required cells are empty.</li>
+first row where all required cells are empty. <b>Merged cells</b> count as if every cell of the merged
+range held the value (e.g. one PWR name merged over several decap rows).</li>
 </ol>
 
 <h2><a name="units"></a>Units and numbers</h2>
 <table border="1" cellspacing="0" cellpadding="4">
 <tr><th>Header unit</th><th>Meaning</th><th>Example</th></tr>
 <tr><td>none or <code>(mm)</code></td><td>millimetre</td><td><code>0.035</code></td></tr>
-<tr><td><code>(um)</code>, <code>(µm)</code></td><td>micrometre</td><td><code>35</code> → 0.035 mm</td></tr>
-<tr><td><code>(mil)</code></td><td>1/1000 inch = 0.0254 mm</td><td><code>1.378</code> → 0.035 mm</td></tr>
+<tr><td><code>(um)</code>, <code>(µm)</code>, <code>(micron)</code></td><td>micrometre</td><td><code>35</code> → 0.035 mm</td></tr>
+<tr><td><code>(mil)</code>, <code>(mils)</code>, <code>(thou)</code></td><td>1/1000 inch = 0.0254 mm</td><td><code>1.378</code> → 0.035 mm</td></tr>
 <tr><td><code>(in)</code>, <code>(inch)</code></td><td>25.4 mm</td><td></td></tr>
 <tr><td><code>(m)</code></td><td>metre</td><td><code>35e-6</code></td></tr>
 </table>

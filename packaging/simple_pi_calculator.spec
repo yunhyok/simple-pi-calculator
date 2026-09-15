@@ -2,13 +2,15 @@
 #
 # PyInstaller spec for Simple PI Calculator (onedir, windowed, Windows).
 #
-# Build from the "packaging" directory so the relative paths below resolve
-# (see packaging/build_windows.ps1 and .github/workflows/build-windows.yml):
+# All paths below are derived from the spec file's own location (SPEC), so the
+# build works from any working directory, e.g. (as in CI):
 #
 #   cd packaging
-#   pyinstaller --noconfirm --clean simple_pi_calculator.spec
+#   pyinstaller --noconfirm --clean simple_pi_calculator.spec --distpath ../dist --workpath ../build
 #
-# Produces dist/SimplePICalculator/SimplePICalculator.exe (onedir build).
+# Produces <distpath>/SimplePICalculator/SimplePICalculator.exe (onedir build).
+# Smoke test (windowed exe, no console output):
+#   SimplePICalculator.exe --self-test --self-test-report selftest.txt
 #
 # Per docs/DESIGN.md §7.1.
 
@@ -41,8 +43,32 @@ if os.path.isdir(EXAMPLES_DIR):
 # (e.g. pyqtgraph.graphicsItems.ViewBox.axisCtrlTemplate_pyside6), so the
 # whole package must be pulled in explicitly rather than relying on static
 # import analysis.
+#
+# The filter prunes sub-packages *before* they are imported: importing
+# pyqtgraph.examples starts a QApplication (it aborts the isolated collector
+# process on a headless Linux box and can open a window on Windows), and
+# opengl/jupyter/Qt-binding templates for other bindings pull in optional
+# dependencies the app never uses.
+_PYQTGRAPH_SKIP = (
+    "pyqtgraph.examples",
+    "pyqtgraph.opengl",
+    "pyqtgraph.jupyter",
+    "pyqtgraph.util.colorama",
+)
+
+
+def _keep_pyqtgraph_module(name):
+    if name.startswith(_PYQTGRAPH_SKIP):
+        return False
+    # Designer templates exist per Qt binding; only the PySide6 ones are used.
+    return not name.endswith(("_pyqt5", "_pyqt6", "_pyside2"))
+
+
 hiddenimports = []
-hiddenimports += collect_submodules("pyqtgraph")
+hiddenimports += collect_submodules("pyqtgraph", filter=_keep_pyqtgraph_module)
+# The app resolves the engine lazily (gui/engine_bridge.py uses importlib), so
+# list the package's own modules explicitly instead of relying on static analysis.
+hiddenimports += collect_submodules("simple_pi_calculator")
 hiddenimports += [
     "pyqtgraph.exporters",
     "PySide6.QtCore",
@@ -85,6 +111,9 @@ excludes = [
     "matplotlib",
     "scipy",
     "IPython",
+    "pyqtgraph.examples",
+    "pyqtgraph.opengl",
+    "pyqtgraph.jupyter",
 ]
 
 a = Analysis(
