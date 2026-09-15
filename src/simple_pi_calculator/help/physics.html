@@ -1,0 +1,187 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Modelling concept</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Modelling concept</h1>
+
+<p>This page explains, with as little mathematics as possible, how the tool turns your inputs into
+|Z(f)| at the PAD. The equations are given in plain text for reference; the literature is listed on the
+<a href="references.html">References</a> page.</p>
+
+<p>Sections: <a href="#chain">PDN chain</a> · <a href="#pair">Plane pair</a> · <a href="#cavity">Cavity resonator</a> ·
+<a href="#ports">Ports</a> · <a href="#geometry">Synthetic geometry</a> · <a href="#vias">Via loop</a> ·
+<a href="#loads">Decap loads and Dummy Cap</a> · <a href="#assembly">Z at the PAD</a> ·
+<a href="#shape">Curve shape</a> · <a href="#numerics">Numerics</a></p>
+
+<h2><a name="chain"></a>1. The PDN chain</h2>
+<p><img src="img/pdn_chain.png" width="760" height="338" alt="PDN chain block diagram"></p>
+<p class="caption">Figure 1 – Decap – via – plane cavity – via – PAD.</p>
+<p>When the IC draws a fast current step, the charge comes from the nearest capacitors. The path is: capacitor
+(its own ESR and ESL) → its vias down to the planes → sideways through the PWR/GND plane pair → up the IC's
+vias → PAD. Every part of that path adds impedance. The tool models each part separately and then connects
+them like a circuit:</p>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Part</th><th>Model</th><th width="26%">Inputs used</th></tr>
+<tr><td>Decap</td><td>Impedance from a SPICE subcircuit or S-parameter file, plus optional mounting inductance</td><td>Decap list, model files</td></tr>
+<tr><td>Decap via set</td><td>Series R + jωL of the via pairs above the planes</td><td>Via settings, stack-up depth</td></tr>
+<tr><td>Plane pair</td><td>Rectangular cavity resonator with one port per via set</td><td>Stack-up, PWR list, distances</td></tr>
+<tr><td>PAD via set</td><td>Same via model with the PAD via count</td><td>Via settings</td></tr>
+<tr><td>PAD</td><td>Ideal observation port (no die or package model)</td><td>–</td></tr>
+</table>
+
+<h2><a name="pair"></a>2. From the stack-up to a plane pair</h2>
+<p>The PWR layer and its GND layer form a parallel-plate structure. The layers between them give the gap d and
+an effective dielectric (the layers are in series in the field direction, like capacitors in series):</p>
+<pre>
+d            = Σ t_i                                 (all layers between PWR and GND)
+d / εc_eff   = Σ t_i / εc_i,   εc = εr·(1 − j·tanδ)    (dielectric layers, complex permittivity εc)
+C_plane      = ε0 · εr_eff · W · H / d                (εr_eff = real part of εc_eff)
+</pre>
+<p>Example: W = 60 mm, H = 21 mm, d = 0.1 mm, εr = 4.3 → C_plane = 480 pF. The plane capacitance is small
+compared with the decaps (41 µF in the same example), but the plane pair is essential as the
+<b>low-inductance connection</b> between PAD and decaps.</p>
+
+<h2><a name="cavity"></a>3. The cavity resonator idea</h2>
+<p>Because the gap d is tiny compared with the plane size and the wavelength, the voltage between the planes
+depends only on the position (x, y) on the plane. The plane pair behaves like a thin two-dimensional
+<b>resonator</b> with open (magnetic-wall) edges, similar to a drum skin: it has natural standing-wave
+patterns (modes) with resonance frequencies</p>
+<pre>
+f_mn = c0 / (2·√εr_eff) · √( (m/W)² + (n/H)² )        m, n = 0, 1, 2, …
+</pre>
+<p>Examples: 60 × 21 mm, εr = 4.3 → f_10 = 1.20 GHz, f_01 = 3.44 GHz. 100 × 80 mm, εr = 4 → f_10 = 749 MHz.</p>
+<p>The impedance between any two points (ports) i and j on the plane is a sum over all modes [Okoshi85],
+[Lei99]:</p>
+<pre>
+Z_ij(f) = Z_p/(W·H) · Σ_m Σ_n  (mode shape at port i) · (mode shape at port j) / (k_mn² − k²(f))
+</pre>
+<ul>
+<li>The <b>(0,0) mode</b> is the uniform plane: it gives exactly the plane capacitance 1/(jωC_plane).</li>
+<li>Modes far above the sweep frequency act together as the <b>spreading inductance</b> between the ports – the
+inductance of the current flowing sideways through the planes, which grows logarithmically with the distance
+between PAD and decap and is proportional to d.</li>
+<li>Modes near the sweep frequency produce the <b>plane resonances</b>.</li>
+<li>Losses are included in the wavenumber k: the dielectric loss tanδ and the conductor loss of both planes
+(skin effect in a plane of finite thickness), which damp the resonance peaks.</li>
+</ul>
+
+<h2><a name="ports"></a>4. Ports: where vias enter the cavity</h2>
+<p><img src="img/cavity_ports.png" width="760" height="388" alt="Cavity ports and via cluster equivalent"></p>
+<p class="caption">Figure 2 – Each via set is a small square port. Its width is chosen so that it has the same geometric
+mean distance as the round via barrel (or the via cluster).</p>
+<p>A via is a small round tube. In the cavity model it is replaced by a small square carrying uniform current,
+with side w = r0 / 0.44705 = 1.118 × D_drill, which reproduces the inductance of the via correctly (verified to
+about 0.4 % against image theory). Several via pairs of one set form a cluster, represented by a wider square
+(GMD rule [Grover46], [Paul10]). Port 0 is the PAD; ports 1…K are the decap via sets.</p>
+
+<h2><a name="geometry"></a>5. Synthetic plane geometry</h2>
+<p><img src="img/plane_placement.png" width="760" height="583" alt="Synthetic plane with margins and decap rows"></p>
+<p class="caption">Figure 3 – Plane W × 1.4·D_ref: PAD at 0.2·D_ref from one edge, farthest row at 1.2·D_ref, 20 % margins.</p>
+<p>You enter only the plane width W and a distance per decap row. The tool builds the plane so that the PAD and
+all decap rows fit with equal margins:</p>
+<pre>
+D_ref = largest Distance to PAD of the PWR net
+H     = 1.4 · D_ref
+PAD   = (W/2, 0.2·D_ref)
+row k : y_k = 0.2·D_ref + d_k,   ports evenly spread in x with margins w/2 + 0.1·W
+</pre>
+<p>What this approximation preserves and what it does not:</p>
+<ul>
+<li><b>Preserved (approximately):</b> the spreading inductance from PAD to each decap (it depends on distance
+logarithmically) and the parallel action of many decaps. These dominate the mid-frequency impedance, which is
+what decap planning is about.</li>
+<li><b>Not preserved:</b> the real plane area – so the plane capacitance, the plane-only curve and the resonance
+frequencies belong to the synthetic plane and are only indicative.</li>
+<li><b>Slightly pessimistic:</b> the PAD is only 0.2·D_ref from a plane edge; the edge increases the PAD–decap
+spreading inductance by typically 10–15 % compared with a large plane.</li>
+</ul>
+
+<h2><a name="vias"></a>6. The via loop</h2>
+<p><img src="img/via_loop.png" width="760" height="422" alt="Via pair loop model"></p>
+<p class="caption">Figure 4 – Loop between PWR and GND via above the nearer plane, anti-pad segment, cavity segment.</p>
+<p>Both decaps and the PAD are on the Top side. Current flows down the PWR via and back up the GND via; the
+magnetic flux between the two barrels above the nearer plane sets the inductance. The model uses the partial
+inductances of two parallel barrels of length h_near at pitch s_v with the nearer plane as a mirror
+[Paul10], [Grover46], plus the short coaxial segment through the anti-pad:</p>
+<pre>
+L_loop    = L_pair(h_near, s_v) + L_ap          L_pair → (µ0·h_near/π)·ln(s_v/r0) for long vias
+Z_viapair = R_loop(f) + jω·L_loop
+Z_via,dec = Z_viapair / (vias per decap / 2)    Z_via,pad = Z_viapair / (PAD via count)
+</pre>
+<p>Rule of thumb: close to 0.9 nH per mm of via length for a 0.2 mm via with 1 mm pitch when the via is much
+longer than the pitch (0.77 nH for exactly 1 mm, because of end effects). Details and examples:
+<a href="input_vias.html">Via settings</a>.</p>
+
+<h2><a name="loads"></a>7. Decap loads and Dummy Cap sharing</h2>
+<p>Each decap port is terminated by the impedance of what is connected to it:</p>
+<pre>
+Z_cap = Z_decap(f) + jω·L_mount                 one capacitor with its mounting inductance
+Z_L   = Z_cap / c + Z_via,dec                   c = number of capacitors on the via set (1 or 2)
+</pre>
+<p><img src="img/dummy_cap.png" width="760" height="422" alt="Dummy cap via sharing"></p>
+<p class="caption">Figure 5 – With Dummy Cap, capacitors are paired on one via set: two capacitors in parallel (Z_cap/2) in
+series with one undivided via set.</p>
+
+<h2><a name="assembly"></a>8. How Z at the PAD is assembled</h2>
+<p>The cavity gives a P × P impedance matrix (P = 1 + K ports). Terminating every decap port with its load and
+"looking into" port 0 is a standard port reduction (Schur complement) [Swaminathan07], [Novak07]:</p>
+<pre>
+Z_cav = | z_00   z_0K |          port 0 = PAD, ports 1…K = decap via sets
+        | z_K0   Z_KK |
+
+Z_red   = z_00 − z_0K · (Z_KK + diag(Z_L))⁻¹ · z_K0
+Z_PAD   = Z_red + Z_via,pad
+Z_plane = z_00 + Z_via,pad          ("plane only" curve: no decaps)
+</pre>
+<p>In words: the decaps, each seen through its vias and through the plane spreading impedance from its own
+position, all act in parallel at the PAD, including the interaction between decaps that share the plane. The
+PAD vias are added in series at the end. This is done at every frequency of the sweep.</p>
+
+<h2><a name="shape"></a>9. What shapes the curve</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="26%">Frequency region</th><th>Dominated by</th><th width="30%">Levers</th></tr>
+<tr><td>Low (100 kHz …)</td><td>Total capacitance: |Z| ≈ 1/(2πf·C_total), falling at −20 dB/decade. No VRM is modelled.</td><td>Bulk/large-value decaps.</td></tr>
+<tr><td>Decap resonances (dips)</td><td>ESR of the capacitors in parallel, at the series resonance of capacitance with the total loop inductance.</td><td>Count, ESR, capacitor values.</td></tr>
+<tr><td>Mid (a few MHz … 100 MHz)</td><td>Inductance: capacitor ESL + mounting + via loops + spreading in the plane, divided by the number of parallel paths. Rises at +20 dB/decade.</td><td>Via length (plane depth), via pitch, number of vias, distance, count.</td></tr>
+<tr><td>Anti-resonance peaks</td><td>Parallel resonance between the inductance of one capacitor group and the capacitance of another (or of the plane).</td><td>Mix of values, damping (ESR).</td></tr>
+<tr><td>High (hundreds of MHz …)</td><td>Plane capacitance and plane resonances; PAD via inductance.</td><td>Thin dielectric, PAD via count.</td></tr>
+</table>
+<p>Sanity check with the example project at 100 kHz: VDD_CORE has 10 × 100 nF + 4 × 10 µF = 41 µF →
+1/(2π·100 kHz·41 µF) = 38.8 mΩ; the computed value is 38.7 mΩ.</p>
+
+<h2><a name="numerics"></a>10. Numerical notes</h2>
+<ul>
+<li>The mode sum is truncated automatically: all modes up to 4× the highest wavenumber of the sweep are summed
+exactly, the remaining high-order modes are added in a fast quasi-static form. The number of modes also grows
+with the plane size divided by the port width. Very large planes with very small drills may hit the cap of
+1500 modes per axis (<code>W_MODES_CAPPED</code>); the status bar shows the mode count.</li>
+<li>The sweep must start at 1 kHz or higher; above 3 GHz a warning reminds you that the cavity model (no radiation,
+no via capacitance) loses accuracy.</li>
+<li>Marker readouts are computed exactly at 1, 10 and 100 MHz, not interpolated from the plotted grid.</li>
+<li>Every PWR net is computed independently; an error in one net does not stop the others.</li>
+</ul>
+
+<hr>
+<p class="nav">Previous: <a href="touchstone.html">Touchstone models</a> | Next: <a href="results.html">Results and plot</a></p>
+</body>
+</html>

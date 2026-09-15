@@ -1,0 +1,100 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Simple PI Calculator Help</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Simple PI Calculator</h1>
+
+<p><b>Simple PI Calculator</b> computes and plots the impedance magnitude |Z(f)| of the
+power-distribution network (PDN) as seen from an IC <b>PAD</b>, separately for every power net (PWR)
+of a PCB or multilayer organic (MLO) substrate. It is a fast, first-order, frequency-domain
+"what-if" tool for early decoupling-capacitor (decap) planning: How many capacitors? Which values?
+How far from the IC? How many vias? It is <b>not</b> a full-wave field solver.</p>
+
+<h2><a name="what"></a>What is modelled</h2>
+
+<p>For each PWR net the tool builds the chain below: every decap (a SPICE <code>.mod</code> subcircuit or a
+Touchstone <code>.s2p</code> measurement) is connected through its vias to a PWR/GND plane pair. The plane
+pair behaves as a cavity resonator with one port per via set. The IC PAD is connected to the same plane
+pair through its own vias. The result is the impedance looking into the PAD.</p>
+
+<p><img src="img/pdn_chain.png" width="760" height="338" alt="PDN chain: decap, via, plane cavity, via, PAD"></p>
+<p class="caption">Figure 1 – The modelled PDN chain for one PWR net.</p>
+
+<p>Main features:</p>
+<ul>
+<li>Stack-up, PWR list and decap list imported from Excel files with tolerant ("fuzzy") header recognition.</li>
+<li>Physics-based cavity model of the plane pair including dielectric and conductor losses and plane resonances.</li>
+<li>Via-pair loop model using the real via length to the nearer plane, drill, anti-pad and via pitch.</li>
+<li>Decap models from vendor SPICE subcircuits (R, L, C, K elements, parameters, nesting) or S-parameter files.</li>
+<li>Dummy Cap option for capacitors that share one via set.</li>
+<li>Log-log plot per PWR with markers at 1 MHz, 10 MHz and 100 MHz, unit switching (Ω / mΩ / µΩ), zoom and export.</li>
+<li>Continuous auto-save of everything you do, plus named project files for sharing.</li>
+</ul>
+
+<h2><a name="workflow"></a>Typical workflow in one minute</h2>
+<ol>
+<li><b>File ▸ Open Example Project</b> to see a complete setup, or start with <b>File ▸ New</b>.</li>
+<li>Import the stack-up (<a href="input_stackup.html">format</a>).</li>
+<li>Check the via settings (<a href="input_vias.html">details</a>).</li>
+<li>Import or type the PWR nets (<a href="input_pwr.html">format</a>) and the decap rows (<a href="input_decaps.html">format</a>).</li>
+<li>Press <b>F5</b> (Compute ▸ Run) and read the plot (<a href="results.html">how to read</a>).</li>
+</ol>
+<p>The complete step-by-step tour is in <a href="getting_started.html">Getting Started</a>.</p>
+
+<h2><a name="contents"></a>Contents</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Page</th><th>What you find there</th></tr>
+<tr><td><a href="getting_started.html">Getting Started</a></td><td>Guided tour of the main window, step-by-step workflow with the example project, first design from scratch.</td></tr>
+<tr><td><a href="input_stackup.html">Input: Stack-up Excel file</a></td><td>Columns, accepted header names, units, metal/dielectric detection, examples, messages.</td></tr>
+<tr><td><a href="input_vias.html">Input: Via settings</a></td><td>Drill, anti-pad, via pitch, vias per decap, PAD via count, plating, via model options.</td></tr>
+<tr><td><a href="input_pwr.html">Input: PWR list</a></td><td>PWR name, PWR and GND layers, plane width, derived plane height, messages.</td></tr>
+<tr><td><a href="input_decaps.html">Input: Decap list</a></td><td>Model file, count, Distance to PAD, Dummy Cap, placement of decaps, messages.</td></tr>
+<tr><td><a href="spice_models.html">Decap models: SPICE .mod</a></td><td>Supported subcircuit syntax, number suffixes, parameters, annotated examples.</td></tr>
+<tr><td><a href="touchstone.html">Decap models: Touchstone .s2p</a></td><td>File format, series-through vs shunt-through, interpolation.</td></tr>
+<tr><td><a href="physics.html">Modelling concept</a></td><td>Cavity resonator, synthetic plane, via loop, Dummy Cap sharing, how Z at the PAD is assembled.</td></tr>
+<tr><td><a href="results.html">Results and plot</a></td><td>Reading the plot, markers, units, zoom/pan, sweep settings, export.</td></tr>
+<tr><td><a href="project_file.html">Projects and auto-save</a></td><td>Auto-save and recovery, New/Open/Save, the .spical.json format.</td></tr>
+<tr><td><a href="troubleshooting.html">Troubleshooting and message codes</a></td><td>All error/warning/info codes with causes and fixes; common problems.</td></tr>
+<tr><td><a href="limitations.html">Limitations</a></td><td>What the model does not include and how that affects the numbers.</td></tr>
+<tr><td><a href="references.html">References</a></td><td>Literature behind the equations.</td></tr>
+<tr><td><a href="about.html">About and licenses</a></td><td>Version, MIT license, third-party licenses.</td></tr>
+</table>
+
+<h2><a name="conventions"></a>Conventions used in this Help</h2>
+<ul>
+<li>Lengths in the user interface and Excel files are in <b>mm</b> unless a unit is given; inductance in nH; |Z| in mΩ by default.</li>
+<li>Layer 1 is the <b>top</b> of the stack-up; decaps and the PAD are on the Top side.</li>
+<li>Message codes start with <code>E_</code> (error, blocks the computation of the affected PWR), <code>W_</code> (warning, result is produced but check it) or <code>I_</code> (information).</li>
+<li>Tags such as [Okoshi85] point to the <a href="references.html">References</a>.</li>
+</ul>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="note"><b>Accuracy in one sentence.</b> The tool is intended for relative comparisons and first
+estimates up to about 1 GHz: the plane is a synthetic rectangle derived from your decap distances, so plane
+resonance frequencies and the plane-only curve are indicative; see <a href="limitations.html">Limitations</a>.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Next: <a href="getting_started.html">Getting Started</a></p>
+</body>
+</html>

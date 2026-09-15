@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="900" height="380" viewBox="0 0 900 380">
+  <title>Touchstone decap fixtures: series-through and shunt-through</title>
+  <rect x="0" y="0" width="900" height="380" fill="#ffffff"/>
+  <text x="450" y="28" font-family="Arial" font-size="18" font-weight="bold" fill="#1a3d6d" text-anchor="middle">How the .s2p file was measured: series-through vs shunt-through</text>
+  <rect x="20" y="45" width="420" height="325" rx="6" fill="#fafafa" stroke="#cccccc" stroke-width="1"/>
+  <text x="230" y="70" font-family="Arial" font-size="14" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Series-through (project default)</text>
+  <circle cx="70" cy="155" r="16" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="70" y="160" font-family="Arial" font-size="14" fill="#333333" text-anchor="middle">~</text>
+  <text x="92" y="160" font-family="Arial" font-size="12" fill="#333333" text-anchor="start">Port 1</text>
+  <line x1="70" y1="139" x2="70" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="70" y1="171" x2="70" y2="200" stroke="#333333" stroke-width="2"/>
+  <rect x="99" y="100" width="52" height="20" fill="#ffffff" stroke="#555555" stroke-width="2"/>
+  <text x="125" y="94" font-family="Arial" font-size="12" font-weight="bold" fill="#555555" text-anchor="middle">Z0</text>
+  <line x1="70" y1="110" x2="99" y2="110" stroke="#333333" stroke-width="2"/>
+  <circle cx="390" cy="155" r="16" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="390" y="160" font-family="Arial" font-size="14" fill="#333333" text-anchor="middle">~</text>
+  <text x="368" y="160" font-family="Arial" font-size="12" fill="#333333" text-anchor="end">Port 2</text>
+  <line x1="390" y1="139" x2="390" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="390" y1="171" x2="390" y2="200" stroke="#333333" stroke-width="2"/>
+  <rect x="309" y="100" width="52" height="20" fill="#ffffff" stroke="#555555" stroke-width="2"/>
+  <text x="335" y="94" font-family="Arial" font-size="12" font-weight="bold" fill="#555555" text-anchor="middle">Z0</text>
+  <line x1="361" y1="110" x2="390" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="70" y1="200" x2="390" y2="200" stroke="#333333" stroke-width="2"/>
+  <line x1="151" y1="110" x2="204" y2="110" stroke="#333333" stroke-width="2"/>
+  <rect x="204" y="100" width="52" height="20" fill="#fbe3e3" stroke="#d62728" stroke-width="2"/>
+  <text x="230" y="94" font-family="Arial" font-size="12" font-weight="bold" fill="#d62728" text-anchor="middle">DUT  Z</text>
+  <line x1="256" y1="110" x2="309" y2="110" stroke="#333333" stroke-width="2"/>
+  <text x="50" y="258" font-family="Arial" font-size="14" font-weight="bold" fill="#222222">S21 = 2·Z0 / (2·Z0 + Z)</text>
+  <text x="50" y="282" font-family="Arial" font-size="14" font-weight="bold" fill="#222222">Z = 2·Z0·(1 − S21) / S21</text>
+  <text x="50" y="310" font-family="Arial" font-size="12" fill="#444444">DUT in series between the two centre conductors.</text>
+  <text x="50" y="327" font-family="Arial" font-size="12" fill="#444444">For |Z| ≪ Z0, 1 − S21 ≈ Z/(2·Z0) is tiny (5 mΩ → 5e-5),</text>
+  <text x="50" y="344" font-family="Arial" font-size="12" fill="#444444">below typical VNA uncertainty: noisy near the SRF.</text>
+  <rect x="460" y="45" width="420" height="325" rx="6" fill="#fafafa" stroke="#cccccc" stroke-width="1"/>
+  <text x="670" y="70" font-family="Arial" font-size="14" font-weight="bold" fill="#8a4a16" text-anchor="middle">Shunt-through (recommended for mΩ decaps)</text>
+  <circle cx="510" cy="155" r="16" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="510" y="160" font-family="Arial" font-size="14" fill="#333333" text-anchor="middle">~</text>
+  <text x="532" y="160" font-family="Arial" font-size="12" fill="#333333" text-anchor="start">Port 1</text>
+  <line x1="510" y1="139" x2="510" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="510" y1="171" x2="510" y2="200" stroke="#333333" stroke-width="2"/>
+  <rect x="539" y="100" width="52" height="20" fill="#ffffff" stroke="#555555" stroke-width="2"/>
+  <text x="565" y="94" font-family="Arial" font-size="12" font-weight="bold" fill="#555555" text-anchor="middle">Z0</text>
+  <line x1="510" y1="110" x2="539" y2="110" stroke="#333333" stroke-width="2"/>
+  <circle cx="830" cy="155" r="16" fill="#ffffff" stroke="#333333" stroke-width="2"/>
+  <text x="830" y="160" font-family="Arial" font-size="14" fill="#333333" text-anchor="middle">~</text>
+  <text x="808" y="160" font-family="Arial" font-size="12" fill="#333333" text-anchor="end">Port 2</text>
+  <line x1="830" y1="139" x2="830" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="830" y1="171" x2="830" y2="200" stroke="#333333" stroke-width="2"/>
+  <rect x="749" y="100" width="52" height="20" fill="#ffffff" stroke="#555555" stroke-width="2"/>
+  <text x="775" y="94" font-family="Arial" font-size="12" font-weight="bold" fill="#555555" text-anchor="middle">Z0</text>
+  <line x1="801" y1="110" x2="830" y2="110" stroke="#333333" stroke-width="2"/>
+  <line x1="510" y1="200" x2="830" y2="200" stroke="#333333" stroke-width="2"/>
+  <line x1="591" y1="110" x2="749" y2="110" stroke="#333333" stroke-width="2"/>
+  <circle cx="670" cy="110" r="4" fill="#333333"/>
+  <line x1="670" y1="110" x2="670" y2="129" stroke="#333333" stroke-width="2"/>
+  <rect x="660" y="129" width="20" height="52" fill="#fbe3e3" stroke="#d62728" stroke-width="2"/>
+  <text x="686" y="160" font-family="Arial" font-size="12" font-weight="bold" fill="#d62728">DUT  Z</text>
+  <line x1="670" y1="181" x2="670" y2="200" stroke="#333333" stroke-width="2"/>
+  <circle cx="670" cy="200" r="4" fill="#333333"/>
+  <text x="490" y="258" font-family="Arial" font-size="14" font-weight="bold" fill="#222222">S21 = 2·Z / (2·Z + Z0)</text>
+  <text x="490" y="282" font-family="Arial" font-size="14" font-weight="bold" fill="#222222">Z = Z0·S21 / (2·(1 − S21))</text>
+  <text x="490" y="310" font-family="Arial" font-size="12" fill="#444444">DUT from the through line to ground.</text>
+  <text x="490" y="327" font-family="Arial" font-size="12" fill="#444444">Resolves milliohms well: the usual fixture for decap</text>
+  <text x="490" y="344" font-family="Arial" font-size="12" fill="#444444">measurements near and above resonance [Novak00].</text>
+</svg>

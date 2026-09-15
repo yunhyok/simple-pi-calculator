@@ -1,0 +1,72 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Limitations</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Limitations</h1>
+
+<p>Simple PI Calculator is a first-order planning tool. Knowing what it leaves out helps you judge the numbers.
+"Optimistic" means the real impedance is likely <b>higher</b> than computed, "pessimistic" means likely lower.</p>
+
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="4%">#</th><th width="22%">Topic</th><th>Limitation and effect</th></tr>
+<tr><td>1</td><td>No VRM / DC path</td><td>No voltage regulator or bulk supply is modelled, so |Z| rises without limit (capacitively) towards low frequency.
+A real PDN flattens to the regulator output impedance below roughly 10–100 kHz. Bulk capacitors can be entered as ordinary decap rows.</td></tr>
+<tr><td>2</td><td>Plane shape</td><td>Only solid rectangular planes: no cut-outs, split planes, irregular outlines, anti-pad fields or neighbouring cavities.
+Only the one GND layer you select is used; a PWR plane between two GND planes is modelled with one cavity (pessimistic).</td></tr>
+<tr><td>3</td><td>Synthetic geometry</td><td>The plane height is derived as 1.4 × the largest decap distance, the PAD and decap rows are at opposite ends, and
+decaps are spread evenly across the width. Real outlines, component coordinates and orientations are not used. Plane capacitance and plane
+resonance frequencies are those of the synthetic plane. The PAD is only 0.2 × D_ref from a plane edge, which increases the PAD–decap
+spreading inductance by typically 10–15 % compared with a large plane (pessimistic). All components are on the Top side.</td></tr>
+<tr><td>4</td><td>Dummy caps</td><td>Two capacitors share one via set as ideal parallel paths; the pad/trace between them and their mutual coupling are neglected
+(only the optional mounting inductance per capacitor is added) – optimistic.</td></tr>
+<tr><td>5</td><td>Via model</td><td>Two-conductor via-pair loop with one via pitch for all pairs, plus the anti-pad segment through the nearer plane.
+Mutual inductance between parallel via pairs is neglected (optimistic for more than 2 vias per decap or more than 1 PAD via pair).
+The default mounting inductance of 0 nH is optimistic – typical 0402/0603 pad and escape inductance is 0.2–0.6 nH per capacitor.
+Via barrel capacitance, via stubs below the far plane, vias passing through other planes and the component body are not modelled.</td></tr>
+<tr><td>6</td><td>Port model</td><td>A via or via cluster is represented by a square port of equal geometric mean distance, with a fixed checkerboard arrangement
+of pitch √2 × via pitch for clusters. Error below 1 % for via spacing ≥ 10 × drill and about 5 % at 2 × drill. Ports closer than their
+widths are unphysical (<code>W_PORT_OVERLAP</code>).</td></tr>
+<tr><td>7</td><td>Dielectric</td><td>Dk and Df are constant over frequency (no dispersion model); anisotropy is ignored.</td></tr>
+<tr><td>8</td><td>Conductors</td><td>Smooth copper, no surface roughness; skin effect included through the surface impedance of planes of the given thickness.</td></tr>
+<tr><td>9</td><td>Frequency range</td><td>The cavity model assumes the dielectric is much thinner than the wavelength and neglects radiation and edge fringing.
+Accuracy degrades above a few GHz (warning above 3 GHz, hard limit 20 GHz). Edge fringing capacitance is neglected (a few %).</td></tr>
+<tr><td>10</td><td>Decap models</td><td>SPICE: only linear R, L, C, K subcircuits; no <code>.INCLUDE</code>/<code>.LIB</code>, behavioural sources, LAPLACE elements,
+temperature or DC-bias derating. Touchstone: the file includes its fixture parasitics; extrapolation outside the file range is simple.</td></tr>
+<tr><td>11</td><td>IC side</td><td>No die capacitance or package model; the PAD is an ideal observation port at the board/substrate surface.</td></tr>
+<tr><td>12</td><td>Numerics</td><td>Sweep start at 1 kHz or higher. The limit of 1500 modes per axis may slightly under-resolve the spreading inductance for very
+large planes with very small drills (<code>W_MODES_CAPPED</code>).</td></tr>
+<tr><td>13</td><td>Persistence</td><td>Only one running instance auto-saves. Computed results are not stored; they are recomputed on restore.</td></tr>
+</table>
+
+<h2><a name="use"></a>Using the results sensibly</h2>
+<ul>
+<li>Best use: <b>comparing variants</b> (number and value of decaps, distance, via count and pitch, plane depth) and first estimates
+of the mid-frequency impedance.</li>
+<li>Treat plane resonances and the plane-only curve as indicative; verify final designs with a tool that uses the real layout.</li>
+<li>Set a realistic mounting inductance before comparing with measurements.</li>
+</ul>
+
+<hr>
+<p class="nav">Previous: <a href="troubleshooting.html">Troubleshooting</a> | Next: <a href="references.html">References</a></p>
+</body>
+</html>

@@ -1,0 +1,186 @@
+{
+  "format": "simple-pi-calculator-project",
+  "schema_version": 1,
+  "app_version": "0.1.0",
+  "stackup": {
+    "source_path": "stackup_6L.xlsx",
+    "layers": [
+      {
+        "number": 1,
+        "name": "TOP",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.2,
+        "df": 0.02
+      },
+      {
+        "number": 2,
+        "name": "PP1",
+        "thickness_mm": 0.1,
+        "conductivity_s_per_m": null,
+        "dk": 4.2,
+        "df": 0.02
+      },
+      {
+        "number": 3,
+        "name": "GND1",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.3,
+        "df": 0.018
+      },
+      {
+        "number": 4,
+        "name": "CORE1",
+        "thickness_mm": 0.1,
+        "conductivity_s_per_m": null,
+        "dk": 4.3,
+        "df": 0.018
+      },
+      {
+        "number": 5,
+        "name": "PWR1",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.3,
+        "df": 0.018
+      },
+      {
+        "number": 6,
+        "name": "PP2",
+        "thickness_mm": 0.8,
+        "conductivity_s_per_m": null,
+        "dk": 4.4,
+        "df": 0.02
+      },
+      {
+        "number": 7,
+        "name": "PWR2",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.3,
+        "df": 0.018
+      },
+      {
+        "number": 8,
+        "name": "CORE2",
+        "thickness_mm": 0.1,
+        "conductivity_s_per_m": null,
+        "dk": 4.3,
+        "df": 0.018
+      },
+      {
+        "number": 9,
+        "name": "GND2",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.2,
+        "df": 0.02
+      },
+      {
+        "number": 10,
+        "name": "PP3",
+        "thickness_mm": 0.1,
+        "conductivity_s_per_m": null,
+        "dk": 4.2,
+        "df": 0.02
+      },
+      {
+        "number": 11,
+        "name": "BOTTOM",
+        "thickness_mm": 0.035,
+        "conductivity_s_per_m": 58000000.0,
+        "dk": 4.2,
+        "df": 0.02
+      }
+    ]
+  },
+  "vias": {
+    "drill_diameter_mm": 0.2,
+    "antipad_diameter_mm": 0.5,
+    "via_pitch_mm": 1.0,
+    "vias_per_decap": 2,
+    "pad_via_count": 1
+  },
+  "advanced": {
+    "via_model": "pair",
+    "plating_thickness_mm": 0.025,
+    "via_conductivity_s_per_m": 58000000.0,
+    "mounting_inductance_nh": 0.0,
+    "s2p_default_mode": "series",
+    "model_search_dir": null
+  },
+  "pwr": {
+    "source_path": "pwr_list.xlsx",
+    "rows": [
+      {
+        "name": "VDD_CORE",
+        "pwr_layer": 5,
+        "gnd_layer": 3,
+        "width_mm": 60.0,
+        "enabled": true
+      },
+      {
+        "name": "VDD_IO",
+        "pwr_layer": 7,
+        "gnd_layer": 9,
+        "width_mm": 30.0,
+        "enabled": true
+      }
+    ]
+  },
+  "decaps": {
+    "source_path": "decap_list.xlsx",
+    "rows": [
+      {
+        "pwr_name": "VDD_CORE",
+        "model_file": "cap_0402_100nF.mod",
+        "count": 10,
+        "distance_mm": 8.0,
+        "dummy": false,
+        "subckt": null,
+        "s2p_mode": null,
+        "enabled": true
+      },
+      {
+        "pwr_name": "VDD_CORE",
+        "model_file": "cap_0603_10uF.mod",
+        "count": 4,
+        "distance_mm": 15.0,
+        "dummy": false,
+        "subckt": null,
+        "s2p_mode": null,
+        "enabled": true
+      },
+      {
+        "pwr_name": "VDD_IO",
+        "model_file": "cap_0402_100nF.mod",
+        "count": 4,
+        "distance_mm": 5.0,
+        "dummy": true,
+        "subckt": null,
+        "s2p_mode": null,
+        "enabled": true
+      },
+      {
+        "pwr_name": "VDD_IO",
+        "model_file": "cap_0603_10uF.mod",
+        "count": 1,
+        "distance_mm": 10.0,
+        "dummy": false,
+        "subckt": null,
+        "s2p_mode": null,
+        "enabled": true
+      }
+    ]
+  },
+  "sweep": {
+    "f_start_hz": 100000.0,
+    "f_stop_hz": 1000000000.0,
+    "n_points": 400,
+    "show_plane_only": false
+  },
+  "display": {
+    "z_unit": "mohm"
+  }
+}

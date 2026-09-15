@@ -1,0 +1,124 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Input: PWR list</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Input: PWR list</h1>
+
+<p>The PWR list defines the power nets to analyse. Each row names a PWR plane layer, the GND plane layer used
+as its reference and the width of the plane. Rows can be imported from Excel (<b>PWR Nets</b> tab ▸
+<b>Import…</b> or <b>File ▸ Import ▸ PWR List…</b>) or entered directly with <b>Add</b>. <b>Duplicate</b>
+copies the selected row, which is handy for variants.</p>
+
+<p>Other inputs page: <a href="input_stackup.html">Stack-up</a> · <a href="input_vias.html">Vias</a> ·
+<a href="input_decaps.html">Decap list</a></p>
+
+<h2><a name="example"></a>Example</h2>
+<p>Bundled file <code>examples/pwr_list.xlsx</code>:</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>PWR Name</th><th>Layer Number</th><th>GND Layer Number</th><th>PWR Plane Width</th></tr>
+<tr><td>VDD_CORE</td><td>5</td><td>3</td><td>60</td></tr>
+<tr><td>VDD_IO</td><td>7</td><td>9</td><td>30</td></tr>
+</table>
+
+<h2><a name="columns"></a>Columns</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="16%">Field</th><th width="10%">Required</th><th width="36%">Accepted headers (rule)</th><th>Content</th></tr>
+<tr><td>GND layer</td><td>yes</td><td>contains <code>gnd</code> or <code>ground</code> and <code>layer</code>: <code>GND Layer Number</code>, <code>Ground Layer</code>, <code>GND_Layer</code></td><td>Layer number (integer) of the reference GND plane.</td></tr>
+<tr><td>PWR layer</td><td>yes</td><td>contains <code>layer</code> (tested after the GND rule): <code>Layer Number</code>, <code>PWR Layer</code></td><td>Layer number (integer) of the PWR plane.</td></tr>
+<tr><td>PWR name</td><td>yes</td><td>contains <code>pwr</code>, <code>power</code> or <code>net</code> together with <code>name</code>, or exactly <code>PWR</code>, <code>Net</code>, <code>Rail</code>: <code>PWR Name</code>, <code>Net Name</code>, <code>Power Name</code></td><td>Unique name, case-sensitive, surrounding spaces removed. Decap rows refer to it.</td></tr>
+<tr><td>Width</td><td>yes</td><td>contains <code>width</code>, or exactly <code>W</code> or <code>X</code>: <code>PWR Plane Width</code>, <code>Width (mm)</code></td><td>Plane width W, number &gt; 0, unit from header (default mm; also um, mil, in, m).</td></tr>
+</table>
+<p>The rules are applied in the order GND layer → PWR layer → PWR name → Width, so <code>GND Layer Number</code>
+is never mistaken for the PWR layer, whatever the column order. The general header, sheet (name containing
+<code>pwr</code> or <code>power</code>) and number rules are the same as for the
+<a href="input_stackup.html#headers">stack-up</a>.</p>
+<p>Columns whose header contains <code>height</code>, <code>length</code> or <code>pad</code> (from older templates) are
+ignored with <code>W_XL_COLUMN_IGNORED</code>: the plane height and the PAD position are derived
+automatically.</p>
+
+<h2><a name="table"></a>The PWR Nets table</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Column</th><th>Meaning</th></tr>
+<tr><td>Enabled</td><td>Untick to exclude the net from the computation.</td></tr>
+<tr><td>PWR Name, PWR Layer, GND Layer, Width mm</td><td>Editable inputs as above.</td></tr>
+<tr><td>D_ref mm <i>(derived)</i></td><td>Largest Distance to PAD of the enabled decap rows of this net.</td></tr>
+<tr><td>Height mm <i>(derived)</i></td><td>Plane height H = 1.4 × D_ref (see below).</td></tr>
+<tr><td>Ports <i>(derived)</i></td><td>Number of cavity ports: 1 PAD port + all decap via sets.</td></tr>
+<tr><td>d mm, εr_eff <i>(derived)</i></td><td>Dielectric thickness and effective permittivity between PWR and GND (from the stack-up).</td></tr>
+<tr><td>C_plane pF <i>(derived)</i></td><td>Capacitance of the synthetic plane W × H.</td></tr>
+</table>
+<p>Cells with an error get a red background; hover over them to read the message.</p>
+
+<h2><a name="gnd"></a>Choosing the GND reference</h2>
+<ul>
+<li>Use the GND plane <b>adjacent</b> to the PWR plane, normally the one with the thinnest dielectric in between.
+A thin dielectric gives a high plane capacitance and a low spreading inductance.</li>
+<li>Only one GND layer is used. If the PWR plane is sandwiched between two GND planes, pick the closer one;
+the second cavity is not modelled (conservative).</li>
+<li>If a metal layer lies between PWR and GND, it is assumed to be removed in the plane area
+(<code>W_STACK_METAL_BETWEEN</code>). More than 3 layers in between gives <code>W_PWR_FAR_GND</code>.</li>
+<li>The nearer of the two layers (smaller layer number) sets the via length; see
+<a href="input_vias.html#length">Via length</a>.</li>
+</ul>
+
+<h2><a name="geometry"></a>Width and derived plane height</h2>
+<p>The real plane outline is not an input. The tool builds a <b>synthetic rectangular plane</b>:</p>
+<ul>
+<li><b>Width W</b> (your input) – the extent of the plane across which the decaps of a row are spread.
+Use the width of the plane region between the IC and the capacitors (for a plane that is wider than the
+area where decaps can be placed, use the width of that area).</li>
+<li><b>Height H = 1.4 × D_ref</b> (derived) – D_ref is the largest decap distance of the net. The PAD sits at
+0.2 × D_ref from one end, the farthest decap row at 1.2 × D_ref, leaving a 20 % margin at both ends.</li>
+<li>If the net has no enabled decap rows, the plane is square (H = W) and only the plane-only result is
+computed (<code>W_PWR_NO_DECAPS</code>).</li>
+</ul>
+<p><img src="img/plane_placement.png" width="760" height="583" alt="Synthetic plane with PAD, decap rows and margins"></p>
+<p class="caption">Figure 1 – Synthetic plane W × 1.4·D_ref with the PAD near the bottom edge and the decap rows at their
+distances. The x margin is 10 % of W plus half a port.</p>
+<p>Example: VDD_CORE, W = 60 mm, decap rows at 8 mm and 15 mm → D_ref = 15 mm, H = 21 mm, PAD at (30, 3) mm,
+C_plane = 480 pF (d = 0.1 mm, εr = 4.3). VDD_IO, W = 30 mm, rows at 5 mm and 10 mm → H = 14 mm, PAD at
+(15, 2) mm, C_plane = 160 pF.</p>
+<p>The consequences of this approximation are explained in <a href="physics.html#geometry">Modelling concept</a>
+and <a href="limitations.html">Limitations</a>.</p>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="26%">Code</th><th>Meaning</th><th width="32%">What to do</th></tr>
+<tr><td><code>E_PWR_NAME_DUP</code></td><td>Two rows have the same PWR name.</td><td>Rename one (names are case-sensitive).</td></tr>
+<tr><td><code>E_PWR_LAYER_NOT_FOUND</code></td><td>The PWR or GND layer number does not exist in the stack-up.</td><td>Check the numbers against the Stack-up tab.</td></tr>
+<tr><td><code>E_PWR_LAYER_NOT_METAL</code></td><td>The PWR or GND layer is a dielectric.</td><td>Use copper layer numbers; check the Conductivity column of the stack-up.</td></tr>
+<tr><td><code>E_PWR_SAME_LAYER</code></td><td>PWR layer and GND layer are identical.</td><td>Choose a different GND layer.</td></tr>
+<tr><td><code>E_PWR_DIM</code></td><td>Width missing, zero or negative.</td><td>Enter the width in mm.</td></tr>
+<tr><td><code>E_PWR_WIDTH_TOO_SMALL</code></td><td>The width is too small to hold even one decap port with the 10 % margins (W &lt; 2.5 × port width).</td><td>Increase W (with a 0.2 mm drill, W must be at least about 0.56 mm).</td></tr>
+<tr><td><code>E_STACK_NO_DIELECTRIC</code></td><td>No dielectric between PWR and GND layer.</td><td>Check the layer numbers.</td></tr>
+<tr><td><code>W_STACK_METAL_BETWEEN</code></td><td>A metal layer lies between PWR and GND; it is treated as cleared.</td><td>Prefer the adjacent GND plane.</td></tr>
+<tr><td><code>W_PWR_FAR_GND</code></td><td>More than 3 layers between PWR and GND.</td><td>Check that this reference is intended.</td></tr>
+<tr><td><code>W_PWR_NO_DECAPS</code></td><td>No enabled decap rows for this net: square plane H = W, plane-only result.</td><td>Add decap rows or enable them.</td></tr>
+<tr><td><code>W_XL_COLUMN_IGNORED</code></td><td>A height/length/PAD column in the Excel file was ignored.</td><td>Nothing; these values are derived.</td></tr>
+<tr><td><code>E_XL_HEADER_NOT_FOUND</code>, <code>E_XL_NUMBER</code>, <code>E_XL_UNIT</code>, <code>E_XL_FORMULA_NO_VALUE</code>, <code>W_XL_DUP_COLUMN</code></td><td>General Excel problems.</td><td>See the <a href="input_stackup.html#messages">stack-up page</a>.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="input_vias.html">Via settings</a> | Next: <a href="input_decaps.html">Decap list</a></p>
+</body>
+</html>

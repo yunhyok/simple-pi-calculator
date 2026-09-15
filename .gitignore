@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Testing / tooling
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Build outputs
+build/
+dist/
+dist-installer/
+packaging/build/
+packaging/dist/
+packaging/version_info.txt
+# PyInstaller spec files are generated elsewhere; keep the tracked one in packaging/
+*.spec
+!packaging/*.spec
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

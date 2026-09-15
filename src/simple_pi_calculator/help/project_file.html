@@ -1,0 +1,177 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Projects and auto-save</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Projects and auto-save</h1>
+
+<p>Simple PI Calculator never asks you to save before closing: <b>everything is auto-saved continuously</b> and
+restored at the next start. Named project files (<code>*.spical.json</code>) are an additional, explicit way to
+keep versions of a design or to share it.</p>
+
+<h2><a name="autosave"></a>Auto-save</h2>
+<h3>What is saved</h3>
+<p>All inputs (stack-up table, via settings, PWR and decap tables, sweep, unit) and the session: window size and
+position, splitter and dock layout, selected tabs, decap filter, zoom of each plot, recent files, the associated
+named project and whether it has unsaved changes. Computed curves are <b>not</b> stored; if results were shown
+when you closed the program, the computation runs again automatically at the next start.</p>
+
+<h3>When it is saved</h3>
+<ul>
+<li>About 1 second after the last change (every edit, import, tab switch, zoom, window move restarts the timer);</li>
+<li>immediately when a computation finishes, before New/Open, after Save/Save As, and when the window is closed.</li>
+</ul>
+<p>Unchanged states are not rewritten. The file is written safely: first to a temporary file, then the previous
+auto-save is kept as a backup, then the new file replaces it. A crash or power loss therefore never leaves you
+without a readable state.</p>
+
+<h3>Where</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">System</th><th>Folder</th></tr>
+<tr><td>Windows</td><td><code>%APPDATA%\SimplePICalculator</code> (e.g. <code>C:\Users\alice\AppData\Roaming\SimplePICalculator</code>)</td></tr>
+<tr><td>Linux</td><td><code>~/.local/share/SimplePICalculator</code></td></tr>
+<tr><td>macOS</td><td>the application data folder reported by Qt (<code>~/Library/Application Support/SimplePICalculator</code>)</td></tr>
+<tr><td>Override</td><td>environment variable <code>SPICAL_APPDATA_DIR</code> (portable use, tests)</td></tr>
+</table>
+<p><b>File ▸ Show Auto-save Folder</b> opens it. The uninstaller does not delete this folder.</p>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="40%">File</th><th>Purpose</th></tr>
+<tr><td><code>autosave.spical.json</code></td><td>Current state.</td></tr>
+<tr><td><code>autosave.bak.spical.json</code></td><td>Previous successfully written state.</td></tr>
+<tr><td><code>autosave.spical.json.tmp</code></td><td>Exists only for a moment while writing.</td></tr>
+<tr><td><code>autosave.lock</code></td><td>Marks the running instance that owns the auto-save.</td></tr>
+<tr><td><code>autosave.corrupt-YYYYMMDD-HHMMSS.spical.json</code></td><td>Unreadable files moved aside (the newest 5 are kept).</td></tr>
+<tr><td><code>autosave.v&lt;N&gt;-newer-YYYYMMDD-HHMMSS.spical.json</code></td><td>Files written by a newer program version, moved aside.</td></tr>
+</table>
+
+<h3>Recovery at start-up</h3>
+<ol>
+<li>The auto-save is read. Missing model or Excel files and invalid values are <b>not</b> corruption: the state is
+restored and the problems are shown in the Messages dock as usual.</li>
+<li>If the file is damaged (not valid JSON, wrong structure), it is moved aside and the backup is used
+(<code>W_AUTOSAVE_RECOVERED_BACKUP</code>). If the backup is damaged too, the program starts with defaults
+(<code>W_AUTOSAVE_CORRUPT</code>, with the paths of the moved files so you can inspect them).</li>
+<li>If the file was written by a newer version of the program, it is moved aside and the backup or defaults are
+used (<code>W_AUTOSAVE_NEWER</code>).</li>
+</ol>
+<p>No dialog interrupts the start; messages appear in the Messages dock and the status bar.</p>
+
+<h3>Two windows at the same time</h3>
+<p>Only the first running instance auto-saves. A second instance shows a yellow banner
+"Another Simple PI Calculator window owns the auto-save…", starts with defaults and never overwrites the
+auto-save – use <b>File ▸ Save As</b> there to keep your work. If the program crashed, the stale lock is detected
+and removed automatically.</p>
+<p>Command-line options: <code>--no-restore</code> starts with defaults (the next change overwrites the auto-save,
+after keeping the old one as backup); <code>--self-test</code> runs a headless check of the installation.</p>
+
+<h2><a name="menu"></a>File menu</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Command</th><th>Behaviour</th></tr>
+<tr><td>New (Ctrl+N)</td><td>If the current state has unsaved changes (or is untitled but contains table rows) you are asked
+<i>Save / Discard / Cancel</i>. Then all inputs return to defaults and results are cleared.</td></tr>
+<tr><td>Open… (Ctrl+O)</td><td>Same question, then loads a <code>.spical.json</code> file. If loading fails, an error is shown and the current state is kept.</td></tr>
+<tr><td>Save (Ctrl+S)</td><td>Writes the associated project file; for an untitled state it acts as Save As.</td></tr>
+<tr><td>Save As… (Ctrl+Shift+S)</td><td>Choose a file name; <code>.spical.json</code> is appended if missing (<code>board</code> → <code>board.spical.json</code>, <code>board.json</code> → <code>board.spical.json</code>).</td></tr>
+<tr><td>Recent Files</td><td>Up to 8 recently used projects; a missing file is reported and removed. <i>Clear Recent Files</i> empties the list.</td></tr>
+<tr><td>Open Example Project</td><td>Loads the bundled example (see <a href="getting_started.html#example">Getting Started</a>).</td></tr>
+<tr><td>Import ▸</td><td>Stack-up…, PWR List…, Decap List… from Excel.</td></tr>
+<tr><td>Export ▸</td><td>Results CSV…, Results XLSX…, Plot PNG… (see <a href="results.html#export">Export</a>).</td></tr>
+<tr><td>Exit</td><td>Saves the auto-save and quits <b>without asking</b>; the unsaved-changes marker and the association with the project file are restored next time.</td></tr>
+</table>
+<p>The window title shows <code>Simple PI Calculator — &lt;project name or Untitled&gt;</code> followed by <code>*</code> when the
+inputs differ from the named project file.</p>
+
+<h2><a name="format"></a>The .spical.json project file</h2>
+<p>A UTF-8 JSON text file that you can read, diff and keep under version control. It contains all inputs, including
+the imported tables, so a project opens even if the Excel files have moved; the source paths are kept for
+<b>Re-import</b>. Paths are stored <b>relative to the project file</b> when on the same drive (otherwise absolute), with
+forward slashes. Named project files never contain window/session data.</p>
+
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Key</th><th>Content</th></tr>
+<tr><td><code>format</code></td><td>Always <code>"simple-pi-calculator-project"</code>.</td></tr>
+<tr><td><code>schema_version</code></td><td>File format version (currently 1).</td></tr>
+<tr><td><code>app_version</code></td><td>Program version that wrote the file.</td></tr>
+<tr><td><code>stackup</code></td><td><code>source_path</code> and <code>layers[]</code> with <code>number, name, thickness_mm, conductivity_s_per_m, dk, df</code> (null for empty).</td></tr>
+<tr><td><code>vias</code></td><td><code>drill_diameter_mm</code> (0.2), <code>antipad_diameter_mm</code> (0.5), <code>via_pitch_mm</code> (1.0), <code>vias_per_decap</code> (2), <code>pad_via_count</code> (1).</td></tr>
+<tr><td><code>advanced</code></td><td><code>via_model</code> ("pair"), <code>plating_thickness_mm</code> (0.025), <code>via_conductivity_s_per_m</code> (5.8e7), <code>mounting_inductance_nh</code> (0), <code>s2p_default_mode</code> ("series"), <code>model_search_dir</code> (null).</td></tr>
+<tr><td><code>pwr</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>name, pwr_layer, gnd_layer, width_mm, enabled</code>. The height is never stored (derived).</td></tr>
+<tr><td><code>decaps</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>pwr_name, model_file, count, distance_mm, dummy, subckt, s2p_mode, enabled</code>.</td></tr>
+<tr><td><code>sweep</code></td><td><code>f_start_hz</code> (1e5), <code>f_stop_hz</code> (1e9), <code>n_points</code> (400), <code>show_plane_only</code> (false).</td></tr>
+<tr><td><code>display</code></td><td><code>z_unit</code>: "ohm", "mohm" (default) or "uohm".</td></tr>
+<tr><td><code>session</code></td><td>Only in the auto-save file (window and plot state); ignored with an info message if found in a named file.</td></tr>
+</table>
+<p>Missing optional keys take their defaults; unknown keys are ignored with <code>W_PROJECT_UNKNOWN_KEY</code>.</p>
+
+<h3>Example (abridged)</h3>
+<pre>
+{
+  "format": "simple-pi-calculator-project",
+  "schema_version": 1,
+  "app_version": "0.1.0",
+  "stackup": {
+    "source_path": "stackup_6L.xlsx",
+    "layers": [
+      {"number": 1, "name": "TOP", "thickness_mm": 0.035, "conductivity_s_per_m": 5.8e7, "dk": 4.2, "df": 0.02},
+      {"number": 2, "name": "PP1", "thickness_mm": 0.1, "conductivity_s_per_m": null, "dk": 4.2, "df": 0.02}
+    ]
+  },
+  "vias": {"drill_diameter_mm": 0.2, "antipad_diameter_mm": 0.5, "via_pitch_mm": 1.0,
+           "vias_per_decap": 2, "pad_via_count": 1},
+  "advanced": {"via_model": "pair", "plating_thickness_mm": 0.025, "via_conductivity_s_per_m": 5.8e7,
+               "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null},
+  "pwr": {"source_path": "pwr_list.xlsx", "rows": [
+    {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "enabled": true}]},
+  "decaps": {"source_path": "decap_list.xlsx", "rows": [
+    {"pwr_name": "VDD_CORE", "model_file": "cap_0402_100nF.mod", "count": 10, "distance_mm": 8,
+     "dummy": false, "subckt": null, "s2p_mode": null, "enabled": true}]},
+  "sweep": {"f_start_hz": 1e5, "f_stop_hz": 1e9, "n_points": 400, "show_plane_only": false},
+  "display": {"z_unit": "mohm"}
+}
+</pre>
+
+<h2><a name="versions"></a>File format versions</h2>
+<ul>
+<li>Adding new optional settings does not change <code>schema_version</code>; older program versions ignore them.</li>
+<li>When a later version changes the meaning of existing keys, <code>schema_version</code> increases and older files are
+converted automatically when opened (<code>I_PROJECT_MIGRATED</code>). The project is marked modified; the file on disk is
+untouched until you save, and on that first save the original is kept as
+<code>&lt;name&gt;.schema&lt;n&gt;.bak.spical.json</code>.</li>
+<li>A file written by a <b>newer</b> program version cannot be opened (<code>E_PROJECT_NEWER</code>); update the program.</li>
+</ul>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Meaning</th><th width="30%">What to do</th></tr>
+<tr><td><code>E_PROJECT_FORMAT</code></td><td>The file is not valid JSON or not a Simple PI Calculator project. Nothing was changed.</td><td>Check that you opened the right file.</td></tr>
+<tr><td><code>E_PROJECT_NEWER</code></td><td>The project was written by a newer program version.</td><td>Install the newer version.</td></tr>
+<tr><td><code>I_PROJECT_MIGRATED</code></td><td>An older project was converted to the current format.</td><td>Save to keep the conversion (a backup of the original is made).</td></tr>
+<tr><td><code>W_PROJECT_UNKNOWN_KEY</code></td><td>The file contains a key the program does not know; it is ignored.</td><td>Usually from hand editing or a newer version.</td></tr>
+<tr><td><code>W_AUTOSAVE_RECOVERED_BACKUP</code></td><td>The last auto-save was damaged; the previous one was restored.</td><td>Check recent edits.</td></tr>
+<tr><td><code>W_AUTOSAVE_CORRUPT</code></td><td>Auto-save and backup were damaged; defaults were used. The damaged files were kept.</td><td>Open your last named project, or inspect the moved files.</td></tr>
+<tr><td><code>W_AUTOSAVE_NEWER</code></td><td>The auto-save was written by a newer version and was moved aside.</td><td>Use the newer version, or continue with the restored backup/defaults.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="results.html">Results and plot</a> | Next: <a href="troubleshooting.html">Troubleshooting</a></p>
+</body>
+</html>

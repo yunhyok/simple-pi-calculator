@@ -1,0 +1,139 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Input: Via settings</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Input: Via settings</h1>
+
+<p>The <b>Vias</b> tab holds the via geometry shared by all PWR nets and all decap rows. Via inductance
+is often the largest single contribution to the PDN impedance above a few MHz, so these few numbers
+matter.</p>
+
+<p>Other inputs page: <a href="input_stackup.html">Stack-up</a> · <a href="input_pwr.html">PWR list</a> ·
+<a href="input_decaps.html">Decap list</a></p>
+
+<h2><a name="fields"></a>Fields</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Field</th><th width="12%">Default</th><th>Meaning</th></tr>
+<tr><td>Drill diameter (mm)</td><td>0.200</td><td>Finished hole diameter of the via barrel, D_drill (0.01–5 mm). The barrel radius r0 = D_drill/2 enters the loop inductance and the port width.</td></tr>
+<tr><td>Anti-pad diameter (mm)</td><td>0.500</td><td>Diameter of the clearance hole in the plane through which a via passes without connecting, D_antipad. Must be larger than the drill.</td></tr>
+<tr><td>Via pitch (mm)</td><td>1.000</td><td><b>Centre-to-centre distance between a PWR via and its GND return via</b>, s_v (0.02–20 mm). Sets the via-pair loop inductance and, for several via pairs, the size of the via cluster.</td></tr>
+<tr><td>Vias per decap</td><td>2</td><td>Total number of vias of one decap via set: 2 = one PWR via + one GND via, 4 = two pairs, … Must be even.</td></tr>
+<tr><td>PAD via count</td><td>1</td><td>Number of PWR/GND via <b>pairs</b> connecting the IC PAD to the planes (1 = one PWR via + one GND via).</td></tr>
+<tr><td>Mounting side</td><td>Top (fixed)</td><td>Decaps and the PAD are mounted on the Top side (layer 1) in this version.</td></tr>
+</table>
+
+<p>Below the form, read-only labels show for the PWR selected in the PWR Nets tab: <b>h_near</b> (via length
+to the nearer plane), <b>L_loop</b> (inductance of one via pair) and the <b>PAD / decap port widths</b>.</p>
+
+<h2><a name="loop"></a>The via-pair loop</h2>
+<p><img src="img/via_loop.png" width="760" height="422" alt="Via pair loop: side view and top view with pitch and anti-pad"></p>
+<p class="caption">Figure 1 – A via pair: current flows down the PWR via and returns up the GND via. The loop above the
+nearer plane dominates the inductance.</p>
+
+<p>Each via set consists of PWR vias and GND vias placed next to each other. The current of a capacitor goes
+down its PWR via to the PWR plane and returns through the GND plane and the GND via. The model splits the
+via path into three segments:</p>
+<ol>
+<li><b>Above the nearer plane</b> (length h_near): the PWR via and GND via form a two-wire loop with spacing
+s_v. Its inductance L_pair grows roughly with h_near × ln(s_v / r0). This is the dominant part.</li>
+<li><b>Through the nearer plane</b> (thickness t_near): only the via that continues to the far plane passes the
+plane, inside its anti-pad. This short coaxial segment adds L_ap = (µ0/2π)·t_near·ln(r_ap/r0).</li>
+<li><b>Across the cavity</b> (gap d between the planes): this part belongs to the cavity model
+(<a href="physics.html#ports">cavity ports</a>) and is not counted again.</li>
+</ol>
+
+<h2><a name="length"></a>Via length: the nearer plane</h2>
+<p>All components are on the Top side, so the via length is the depth of the <b>nearer</b> plane of the pair
+(the one with the smaller layer number), measured from the Top surface to the top face of that plane:</p>
+<pre>
+nearer layer n = min(PWR layer, GND layer)
+h_near         = z_top(n)                   (see the z_top column of the Stack-up tab)
+h_R            = 2·h_near + t_near          (conductor length used for the via resistance)
+</pre>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Example (drill 0.2 mm, anti-pad 0.5 mm, pitch 1.0 mm)</th><th>nearer layer</th><th>h_near</th><th>L_loop per pair</th><th>R at 1 MHz</th></tr>
+<tr><td>VDD_CORE: PWR 5 / GND 3</td><td>3</td><td>0.135 mm</td><td>0.054 nH</td><td>0.41 mΩ</td></tr>
+<tr><td>VDD_IO: PWR 7 / GND 9</td><td>7</td><td>1.105 mm</td><td>0.866 nH</td><td>3.0 mΩ</td></tr>
+</table>
+<p>The same plane pair can therefore behave very differently depending on its depth: planes close to the
+component side give short, low-inductance via loops. If the nearer plane is layer 1 itself, the via length
+is zero and only the anti-pad segment remains (<code>W_VIA_ZERO_LENGTH</code>).</p>
+
+<h2><a name="pitch"></a>Choosing the via pitch</h2>
+<ul>
+<li>Use the typical centre distance between a capacitor's PWR via and its GND via (for a 0402 with vias at
+the pad ends often 0.5–1.0 mm; for via-in-pad designs smaller).</li>
+<li>The inductance depends on the logarithm of s_v / r0: halving the pitch from 1.0 mm to 0.5 mm with a
+0.2 mm drill reduces the long-via inductance by about 30 %.</li>
+<li>The pitch must be larger than the drill (<code>E_VIA_PITCH</code>). If the GND via would cut into the
+PWR via's anti-pad, i.e. s_v &lt; (D_drill + D_antipad)/2, you get <code>W_VIA_PITCH_SMALL</code>.</li>
+</ul>
+
+<h2><a name="counts"></a>Vias per decap and PAD via count</h2>
+<p>More via pairs reduce the impedance in two ways:</p>
+<ul>
+<li><b>Above the planes</b> the pairs act as parallel paths: the via impedance of a decap via set is
+Z_viapair / (vias per decap / 2), and at the PAD Z_viapair / (PAD via count). Mutual inductance between
+neighbouring pairs is neglected, which is optimistic for closely packed vias.</li>
+<li><b>Inside the cavity</b> the vias of one set spread the current over a larger area. The set is represented
+by one wider square port (a via cluster), which reduces the spreading inductance between PAD and decaps.</li>
+</ul>
+<p><img src="img/cavity_ports.png" width="760" height="388" alt="Cavity ports: square equivalent of a via and of a via cluster"></p>
+<p class="caption">Figure 2 – A via, or a checkerboard cluster of vias, is replaced by a square port of equal geometric
+mean distance. n_p = PAD via count for the PAD, vias per decap / 2 for a decap.</p>
+<p>The cluster is assumed to be a checkerboard of alternating PWR and GND vias with nearest spacing s_v,
+filled row by row. Port widths for drill 0.2 mm and pitch 1.0 mm: 1 pair 0.224 mm, 2 pairs 0.841 mm,
+4 pairs 1.779 mm, 9 pairs 3.451 mm. The anti-pad diameter does not change the port width.</p>
+
+<h2><a name="advanced"></a>Advanced settings</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="26%">Field</th><th width="14%">Default</th><th>Meaning</th></tr>
+<tr><td>Via model</td><td>pair</td><td><b>pair</b> (recommended): image partial-inductance model of the PWR/GND via pair plus anti-pad segment, valid for short and long vias.<br>
+<b>goldfarb_pucel</b>: via-post formula [Goldfarb91] with the mutual term subtracted – for comparison.<br>
+<b>coax</b>: legacy coaxial model using the anti-pad as return radius over the via length – only to compare with older results; underestimates long via pairs by about 2×.</td></tr>
+<tr><td>Plating thickness (mm)</td><td>0.025</td><td>Copper plating of the barrel. Sets the DC resistance; if it is ≥ r0 the via is treated as filled.</td></tr>
+<tr><td>Via conductivity (S/m)</td><td>5.8e7</td><td>Barrel conductivity (copper).</td></tr>
+<tr><td>Mounting inductance per capacitor (nH)</td><td>0</td><td>Pad, escape trace and solder inductance of <b>one</b> capacitor, added in series with each capacitor model (not with the via). Typical 0.2–0.6 nH for 0402/0603; 0 is optimistic unless the model already contains it.</td></tr>
+<tr><td>S2P default mode</td><td>series</td><td>How <code>.s2p</code> files are converted when a decap row has no S2P Mode: series-through or shunt-through (see <a href="touchstone.html">Touchstone</a>).</td></tr>
+<tr><td>Model search folder</td><td>(none)</td><td>Additional folder searched for decap model files given with a relative path (see <a href="input_decaps.html#paths">path resolution</a>).</td></tr>
+</table>
+
+<h3>Resistance</h3>
+<p>The via resistance is the resistance of a plated tube over h_R with a smooth transition from the DC value
+(plating thickness) to the skin-effect value at high frequency. Example for 1 mm of a 0.2 mm via with 25 µm
+copper plating: 1.25 mΩ at 1 kHz, 1.34 mΩ at 1 MHz, 4.9 mΩ at 100 MHz, 13.8 mΩ at 1 GHz.</p>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Code</th><th>Meaning</th><th width="34%">What to do</th></tr>
+<tr><td><code>E_VIA_ANTIPAD</code></td><td>The anti-pad diameter is not larger than the drill diameter.</td><td>Enter the clearance diameter (typically drill + 0.2 … 0.4 mm).</td></tr>
+<tr><td><code>E_VIA_COUNT</code></td><td>Vias per decap is odd or smaller than 2.</td><td>Use 2, 4, 6, … (PWR and GND vias come in pairs).</td></tr>
+<tr><td><code>E_VIA_PITCH</code></td><td>The via pitch is not larger than the drill diameter (vias would overlap).</td><td>Enter the centre distance between PWR and GND via.</td></tr>
+<tr><td><code>W_VIA_PITCH_SMALL</code></td><td>Pitch smaller than (drill + anti-pad)/2: the GND via would cut into the PWR via's anti-pad.</td><td>Check the value; the result is computed anyway.</td></tr>
+<tr><td><code>W_VIA_ZERO_LENGTH</code></td><td>The nearer plane is layer 1 (the Top metal): the via loop above the plane has zero length; only the anti-pad segment is used.</td><td>Check the PWR/GND layer numbers; a plane on the component layer is unusual.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="input_stackup.html">Stack-up Excel file</a> | Next: <a href="input_pwr.html">PWR list</a></p>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="900" height="460" viewBox="0 0 900 460">
+  <title>Cavity ports: plane coordinates and square equivalent of vias and via clusters</title>
+  <rect x="0" y="0" width="900" height="460" fill="#ffffff"/>
+  <text x="450" y="28" font-family="Arial" font-size="18" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Cavity ports: where the vias enter the plane pair</text>
+  <text x="60" y="66" font-family="Arial" font-size="13" font-weight="bold" fill="#333333">Plane pair seen from the top (a = W, b = H)</text>
+  <rect x="60" y="80" width="340" height="250" fill="#e6f4e1" stroke="#3c7a2e" stroke-width="2" stroke-dasharray="8,4"/>
+  <text x="230.0" y="102" font-family="Arial" font-size="11" fill="#2d5e22" text-anchor="middle">open edges (magnetic walls): standing waves → resonances f_mn</text>
+  <rect x="222.0" y="272" width="16" height="16" fill="#d62728"/>
+  <text x="246.0" y="285" font-family="Arial" font-size="12" fill="#a31b1b">port 0 = PAD (width w_pad)</text>
+  <rect x="104" y="140" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="164" y="140" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="224" y="140" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="284" y="140" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="344" y="140" width="12" height="12" fill="#2b6cb0"/>
+  <text x="230.0" y="172" font-family="Arial" font-size="12" fill="#1a3d6d" text-anchor="middle">ports 1 … K = decap via sets (width w_dec)</text>
+  <text x="54" y="346" font-family="Arial" font-size="11" fill="#555555" text-anchor="end">(0,0)</text>
+  <line x1="60" y1="360" x2="400" y2="360" stroke="#333333" stroke-width="1"/>
+  <polygon points="60,360 68,356 68,364" fill="#333333"/>
+  <polygon points="400,360 392,356 392,364" fill="#333333"/>
+  <text x="230.0" y="378" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">x: 0 … a = W</text>
+  <line x1="35" y1="80" x2="35" y2="330" stroke="#333333" stroke-width="1"/>
+  <polygon points="35,80 31,88 39,88" fill="#333333"/>
+  <polygon points="35,330 31,322 39,322" fill="#333333"/>
+  <text x="28" y="205.0" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle" transform="rotate(-90 28 205.0)">y: 0 … b = H</text>
+  <text x="60" y="406" font-family="Arial" font-size="12" fill="#333333">Every port pair (i, j) gets an impedance Z_ij</text>
+  <text x="60" y="423" font-family="Arial" font-size="12" fill="#333333">from a sum over the plane modes (m, n). A port is</text>
+  <text x="60" y="440" font-family="Arial" font-size="12" fill="#333333">a small square carrying uniform current.</text>
+  <text x="440" y="66" font-family="Arial" font-size="13" font-weight="bold" fill="#333333">Square equivalent of a via (GMD rule)</text>
+  <circle cx="500" cy="150" r="22" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <line x1="500" y1="150" x2="522" y2="150" stroke="#ffffff" stroke-width="1.5"/>
+  <text x="506" y="145" font-family="Arial" font-size="11" font-weight="bold" fill="#ffffff">r0</text>
+  <text x="500" y="192" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 via, radius r0</text>
+  <line x1="540" y1="150" x2="590" y2="150" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="598,150 588,145 588,155" fill="#444444"/>
+  <rect x="625.5" y="125.5" width="49" height="49" fill="#2b6cb0" fill-opacity="0.35" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="650" y="192" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">square port, side w</text>
+  <text x="705" y="142" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">w = r0 / 0.44705</text>
+  <text x="705" y="162" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">   = 1.11845 · D_drill</text>
+  <text x="440" y="228" font-family="Arial" font-size="13" font-weight="bold" fill="#333333">Via cluster (several via pairs on one port)</text>
+  <rect x="462" y="262" width="76" height="76" fill="#2b6cb0" fill-opacity="0.15" stroke="#2b6cb0" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <circle cx="500" cy="300" r="7" fill="#2b6cb0"/>
+  <circle cx="552" cy="300" r="7" fill="#2b6cb0"/>
+  <circle cx="448" cy="300" r="7" fill="#2b6cb0"/>
+  <circle cx="500" cy="352" r="7" fill="#2b6cb0"/>
+  <circle cx="500" cy="248" r="7" fill="#2b6cb0"/>
+  <circle cx="526" cy="326" r="7" fill="#d62728"/>
+  <circle cx="474" cy="326" r="7" fill="#d62728"/>
+  <circle cx="526" cy="274" r="7" fill="#d62728"/>
+  <circle cx="474" cy="274" r="7" fill="#d62728"/>
+  <line x1="500" y1="300" x2="526" y2="274" stroke="#333333" stroke-width="1"/>
+  <text x="504" y="280" font-family="Arial" font-size="10" fill="#333333">s_v</text>
+  <text x="575" y="260" font-family="Arial" font-size="11" fill="#333333">Checkerboard of PWR (red) and GND (blue) vias,</text>
+  <text x="575" y="276" font-family="Arial" font-size="11" fill="#333333">nearest spacing s_v. The n_p vias that cross the</text>
+  <text x="575" y="292" font-family="Arial" font-size="11" fill="#333333">cavity (here 4 red) sit on a grid of pitch √2·s_v.</text>
+  <text x="575" y="316" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">ln g_p = (1/n_p²)·Σ_i Σ_j ln d_ij   (d_ii = r0)</text>
+  <text x="575" y="336" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">w_p = g_p / 0.44705</text>
+  <text x="440" y="384" font-family="Arial" font-size="12" fill="#333333">Example D_drill = 0.2 mm, s_v = 1.0 mm:</text>
+  <text x="440" y="401" font-family="Arial" font-size="12" fill="#333333">n_p = 1 → w = 0.224 mm;  2 → 0.841 mm;  4 → 1.779 mm;  9 → 3.451 mm</text>
+  <text x="440" y="420" font-family="Arial" font-size="11" fill="#555555">n_p = PAD via count (PAD port) or vias per decap / 2 (decap port).</text>
+  <text x="440" y="435" font-family="Arial" font-size="11" fill="#555555">The anti-pad diameter does not change the port width.</text>
+</svg>

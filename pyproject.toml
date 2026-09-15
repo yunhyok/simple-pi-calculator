@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simple-pi-calculator"
+dynamic = ["version"]
+description = "Fast first-order PDN impedance calculator for PCB / MLO power planes with decoupling capacitors"
+license = { text = "MIT" }
+authors = [{ name = "Simple PI Calculator contributors" }]
+requires-python = ">=3.11,<3.12"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "PySide6>=6.6,<6.9",
+    "pyqtgraph>=0.13.4",
+    "numpy>=1.26,<3",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+full = ["scipy>=1.11"]
+dev = ["pytest", "pytest-qt", "pyinstaller>=6.3"]
+
+[project.gui-scripts]
+simple-pi-calculator = "simple_pi_calculator.app:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "simple_pi_calculator.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+simple_pi_calculator = ["help/**/*", "resources/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: long-running performance tests",
+    "gui: GUI smoke tests (pytest-qt, offscreen)",
+]

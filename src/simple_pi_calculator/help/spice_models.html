@@ -1,0 +1,184 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Decap models: SPICE .mod files</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Decap models: SPICE .mod files</h1>
+
+<p>The preferred decap model is a <b>two-terminal SPICE subcircuit</b> as published by capacitor vendors
+(files ending in <code>.mod</code>, <code>.lib</code>, <code>.sp</code>, <code>.cir</code>, <code>.sub</code> or <code>.inc</code>).
+The tool reads the linear R, L, C and K (coupling) elements, resolves parameters and nested subcircuits, and
+computes the impedance between the two pins with an AC circuit solver. No external simulator is needed.</p>
+
+<h2><a name="minimal"></a>A minimal model, annotated</h2>
+<p>The arrows and text after <code>&lt;-</code> are explanations and not part of the file.</p>
+<pre>
+* Simple PI Calculator example model (synthetic, not vendor data)   &lt;- comment line (starts with *)
+* 0.1 uF 0402 X7R MLCC, series R-L-C
+.SUBCKT CAP_0402_100NF 1 2        &lt;- name, then the two pins: pin 1 = PWR side, pin 2 = GND side
+R1 1 11 30m                       &lt;- ESR 30 mΩ between node 1 and node 11 (m = milli)
+L1 11 12 0.45nH                   &lt;- ESL 0.45 nH (the trailing "H" is ignored)
+C1 12 2 100nF                     &lt;- capacitance 100 nF
+.ENDS CAP_0402_100NF              &lt;- end of the subcircuit
+</pre>
+<p>This model has its series resonance at f0 = 1/(2π√(LC)) = 23.7 MHz with |Z(f0)| = 30 mΩ. The Decaps tab
+shows it as C @100 kHz ≈ 100 nF and SRF ≈ 23.7 MHz.</p>
+
+<h2><a name="supported"></a>What is supported</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Statement</th><th width="36%">Syntax</th><th>Notes</th></tr>
+<tr><td>Resistor</td><td><code>Rname n1 n2 value</code> or <code>R=value</code></td><td>R = 0 allowed (short). R &lt; 0 gives a warning.</td></tr>
+<tr><td>Inductor</td><td><code>Lname n1 n2 value</code> or <code>L=value</code></td><td>L = 0 allowed (short). L &lt; 0 is an error. The first node is the dotted terminal.</td></tr>
+<tr><td>Capacitor</td><td><code>Cname n1 n2 value</code> or <code>C=value</code></td><td>C = 0 is ignored (open). C &lt; 0 is an error.</td></tr>
+<tr><td>Multiplier</td><td><code>M=value</code> on R, L, C</td><td>M parallel elements: R/M, L/M, C·M.</td></tr>
+<tr><td>Coupling</td><td><code>Kname L1 L2 [L3 …] k</code></td><td>Mutual inductance M = k·√(L1·L2) between all listed inductors; |k| ≤ 1 (k = 1 gives <code>W_K_UNITY</code>).</td></tr>
+<tr><td>Subcircuit call</td><td><code>Xname n1 n2 … SUBNAME [PARAMS:] [name=value …]</code></td><td>Nesting up to 20 levels; subcircuits may be defined before or after use, also inside other subcircuits.</td></tr>
+<tr><td>Subcircuit definition</td><td><code>.SUBCKT NAME pin1 pin2 … [PARAMS: name=default …]</code> … <code>.ENDS [NAME]</code></td><td>The top-level subcircuit must have exactly 2 pins.</td></tr>
+<tr><td>Parameters</td><td><code>.PARAM name=value [name=value …]</code></td><td>Global (outside subcircuits) or local (inside).</td></tr>
+<tr><td>Expressions</td><td><code>{expr}</code> or <code>'expr'</code></td><td><code>+ - * /</code>, <code>**</code> or <code>^</code>, parentheses, functions <code>sqrt abs exp log log10 pow min max</code>, constant <code>pi</code>.</td></tr>
+<tr><td>Other options</td><td><code>IC=</code>, <code>TC=</code>, <code>TC1=</code>, …</td><td>Ignored with <code>W_SPICE_OPTION_IGNORED</code>.</td></tr>
+<tr><td>Ignored statements</td><td><code>.END .MODEL .OPTIONS .TEMP .AC .TRAN</code></td><td>Skipped with <code>W_SPICE_IGNORED</code>.</td></tr>
+</table>
+
+<h3>Not supported (error <code>E_SPICE_UNSUPPORTED</code>)</h3>
+<ul>
+<li><code>.INCLUDE</code>, <code>.LIB</code> (as a statement), <code>.FUNC</code> – copy the included subcircuit into the file instead.</li>
+<li>Sources and non-linear or behavioural elements: <code>V I E F G H B D Q M J T S W U O</code> elements,
+including <code>LAPLACE</code> or frequency-table sources. DC-bias and temperature models that rely on them cannot be used.</li>
+</ul>
+
+<h2><a name="syntax"></a>Syntax rules</h2>
+<ul>
+<li>Lines starting with <code>*</code> are comments. <code>;</code> anywhere, and <code>$</code> after a space, start an inline comment.</li>
+<li>A line starting with <code>+</code> continues the previous line.</li>
+<li>Everything is case-insensitive, including node names. The first line is <b>not</b> treated as a title.</li>
+<li>Parentheses and commas in node lists are treated as spaces: <code>X1 (a b) SUB</code>.</li>
+<li>Spaces around <code>=</code> are allowed: <code>C = 1n</code>.</li>
+<li>Node <code>0</code> or <code>GND</code> used inside a subcircuit is joined with pin 2 of the top-level
+subcircuit (<code>W_SPICE_GLOBAL_GND</code>).</li>
+<li>Files are read as UTF-8, with Latin-1 as fallback.</li>
+</ul>
+
+<h2><a name="numbers"></a>Numbers and suffixes</h2>
+<p>A number may be followed by a scale suffix and any letters (units), which are ignored. The exponent is read
+before the suffix.</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Suffix</th><th>Factor</th><th>Example</th></tr>
+<tr><td><code>T</code></td><td>1e12</td><td></td></tr>
+<tr><td><code>G</code></td><td>1e9</td><td></td></tr>
+<tr><td><code>MEG</code></td><td>1e6</td><td><code>100MEG</code> = 1e8 Ω, <code>1Meg</code> = 1e6</td></tr>
+<tr><td><code>K</code></td><td>1e3</td><td><code>1e3k</code> = 1e6</td></tr>
+<tr><td><code>MIL</code></td><td>25.4e-6</td><td><code>3mil</code> = 76.2 µm</td></tr>
+<tr><td><code>M</code></td><td>1e-3 (milli!)</td><td><code>5mOhm</code> = 5e-3, <code>30m</code> = 0.03</td></tr>
+<tr><td><code>U</code>, <code>µ</code></td><td>1e-6</td><td><code>10u</code> = <code>10uF</code> = 1e-5</td></tr>
+<tr><td><code>N</code></td><td>1e-9</td><td><code>2.2nH</code> = 2.2e-9</td></tr>
+<tr><td><code>P</code></td><td>1e-12</td><td></td></tr>
+<tr><td><code>F</code></td><td>1e-15</td><td><code>1F</code> = 1 fF (!)</td></tr>
+<tr><td>none</td><td>1</td><td><code>0.1</code>, <code>1e-9</code>, <code>10Ohm</code> = 10</td></tr>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="warn"><b>Classic SPICE traps.</b>
+<ul>
+<li><code>1F</code> or <code>1Farad</code> means <b>1 femtofarad</b>, not 1 farad (F is the femto suffix). Write <code>1</code> for 1 F.</li>
+<li><code>1M</code> means <b>1 milli</b>, not 1 mega. Use <code>1MEG</code> for 1e6.</li>
+<li><code>10Ohm</code> is 10 Ω because "O" is not a suffix, but <code>10mOhm</code> is 10 mΩ.</li>
+</ul>
+Check the <b>C @100 kHz</b> and <b>SRF</b> columns of the Decaps tab after loading a new model.</td></tr>
+</table>
+
+<h2><a name="params"></a>Parameters and nesting</h2>
+<p>Values can refer to parameters. When a subcircuit is instantiated, its parameter set is built from:</p>
+<ol>
+<li>the parameters visible to the caller (for the top level: global <code>.PARAM</code> lines, evaluated in file order);</li>
+<li>the defaults on the <code>.SUBCKT … PARAMS:</code> line;</li>
+<li>the overrides on the <code>X</code> line (evaluated with the caller's parameters). Overriding a parameter
+the subcircuit does not declare gives <code>W_SPICE_UNKNOWN_PARAM</code> (still applied);</li>
+<li>local <code>.PARAM</code> lines inside the subcircuit, in order. Redefining a default/override parameter
+locally is an error (<code>E_SPICE_PARAM_REDEF</code>).</li>
+</ol>
+
+<h3>Annotated example with nesting (bundled <code>cap_0603_10uF.mod</code>)</h3>
+<p>The text on the right of each line is an explanation, not part of the file (except the <code>;</code> and <code>$</code> inline comments, which are real comments).</p>
+<pre>
+* 10 uF 0603 X5R MLCC with nested ESL/ESR branch
+.PARAM CNOM=10u                                   global parameter
+.SUBCKT CAP_0603_10UF PIN1 PIN2 PARAMS: CDER=0.9  top-level subckt, 2 pins, default CDER
+X_ESL PIN1 N1 RL_BRANCH PARAMS: LS=0.5n           call RL_BRANCH with LS = 0.5 nH ...
++ RS=3m                                  ; continuation line: ... and RS = 3 mΩ
+C1 N1 N2 {CNOM*CDER/0.9}                 $ expression: 10u*0.9/0.9 = 10 uF
+R2 N2 PIN2 2m                                     2 mΩ
+RLEAK N1 PIN2 100MEG                              leakage 100 MΩ (MEG, not M!)
+.ENDS CAP_0603_10UF
+
+.SUBCKT RL_BRANCH A B PARAMS: LS=1n RS=1m         defaults, overridden by the call above
+L1 A M1 {LS/2}                                    0.25 nH
+L2 M1 M2 {LS/2}                                   0.25 nH
+K12 L1 L2 0.0                                     coupling (k = 0 here)
+R1 M2 B {RS}                                      3 mΩ
+.ENDS RL_BRANCH
+</pre>
+<p>After flattening, the circuit is R = 3 mΩ + 2 mΩ, L = 0.5 nH, C = 10 µF: SRF = 2.25 MHz, |Z| at SRF ≈ 5 mΩ.</p>
+
+<h2><a name="top"></a>Which subcircuit is used?</h2>
+<ul>
+<li>If the decap row has a <b>Subckt</b> name, that subcircuit is used.</li>
+<li>Otherwise the tool looks for subcircuits that are not called by any other subcircuit in the file. If there is
+exactly one, it is used; if there are several (a vendor library with many part numbers), the first one with
+2 pins is used and <code>W_SPICE_MULTI_TOP</code> is shown – set the Subckt column to choose explicitly.</li>
+<li>The chosen subcircuit must have exactly two pins: pin 1 connects to PWR, pin 2 to GND. For a
+capacitor model the orientation does not matter.</li>
+</ul>
+
+<h2><a name="vendor"></a>Using vendor models</h2>
+<ul>
+<li>Many vendors provide one <code>.mod</code>/<code>.lib</code> file per part or a library with many parts; the latter needs the Subckt column.</li>
+<li>Models with DC-bias or temperature dependence that use behavioural sources are not supported; ask the vendor
+for a "simple" or "linear" RLC model at the desired bias, or use a measured <code>.s2p</code> file.</li>
+<li>Some models already include mounting inductance for a reference layout; then keep the mounting inductance setting at 0.</li>
+<li>Always verify with <b>Preview model</b>: the curve should fall at −20 dB/decade, dip at the SRF and rise above it.</li>
+</ul>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="26%">Code</th><th>Meaning</th><th width="30%">What to do</th></tr>
+<tr><td><code>E_SPICE_UNSUPPORTED</code></td><td>Unsupported statement or element (file, line number and text are shown).</td><td>Remove it or use another model.</td></tr>
+<tr><td><code>E_SPICE_EXPR</code></td><td>An expression cannot be evaluated: unknown parameter, syntax error or division by zero.</td><td>Check the expression and parameter names.</td></tr>
+<tr><td><code>E_SPICE_PARAM_REDEF</code></td><td>A local <code>.PARAM</code> redefines a subcircuit parameter.</td><td>Rename the local parameter.</td></tr>
+<tr><td><code>E_SPICE_RECURSION</code></td><td>A subcircuit calls itself (directly or indirectly) or nesting is deeper than 20.</td><td>Fix the calls.</td></tr>
+<tr><td><code>E_SPICE_UNKNOWN_SUBCKT</code></td><td>A called or requested subcircuit does not exist.</td><td>Check the Subckt column and <code>X</code> lines (spelling).</td></tr>
+<tr><td><code>E_SPICE_PIN_COUNT</code></td><td>The top-level subcircuit does not have exactly 2 pins.</td><td>Select a 2-pin subcircuit in the Subckt column.</td></tr>
+<tr><td><code>E_SPICE_NO_SUBCKT</code></td><td>The file contains no <code>.SUBCKT</code>.</td><td>Wrap the elements in a <code>.SUBCKT NAME 1 2</code> … <code>.ENDS</code> block.</td></tr>
+<tr><td>other errors</td><td>Missing <code>.ENDS</code>, |k| &gt; 1, negative L or C, K referring to a missing inductor, pin 1 = pin 2.</td><td>Correct the file at the reported line.</td></tr>
+<tr><td><code>W_SPICE_OPTION_IGNORED</code></td><td>An element option other than <code>M=</code> was ignored.</td><td>Usually harmless.</td></tr>
+<tr><td><code>W_SPICE_IGNORED</code></td><td>A statement such as <code>.MODEL</code> or <code>.OPTIONS</code> was skipped.</td><td>Usually harmless.</td></tr>
+<tr><td><code>W_SPICE_UNKNOWN_PARAM</code></td><td>An <code>X</code> line sets a parameter the subcircuit does not declare.</td><td>Check spelling.</td></tr>
+<tr><td><code>W_SPICE_GLOBAL_GND</code></td><td>Node 0/GND used inside a subcircuit; joined with pin 2.</td><td>Check that this is intended.</td></tr>
+<tr><td><code>W_SPICE_MULTI_TOP</code></td><td>Several possible top-level subcircuits; the first 2-pin one was used.</td><td>Set the Subckt column.</td></tr>
+<tr><td><code>W_K_UNITY</code></td><td>Coupling coefficient exactly 1.</td><td>Allowed; use k slightly below 1 if the result looks odd.</td></tr>
+<tr><td><code>W_MNA_FLOATING</code></td><td>A node has no connection to pin 2; a tiny conductance is added so the circuit can be solved.</td><td>Check node names for typos.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="input_decaps.html">Decap list</a> | Next: <a href="touchstone.html">Touchstone models</a></p>
+</body>
+</html>

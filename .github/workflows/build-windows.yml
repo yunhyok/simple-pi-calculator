@@ -1,0 +1,174 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # needed to create a GitHub Release on tag builds
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  test:
+    name: Test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install package (dev extras)
+        shell: bash
+        run: |
+          pip install --upgrade pip
+          if pip install -e ".[dev]"; then
+            echo "installed via [dev] extra"
+          else
+            echo "[dev] extra not available; installing explicit test deps"
+            pip install -e .
+            pip install pyinstaller pytest pytest-qt
+          fi
+
+      - name: Run tests
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+  build:
+    name: Build installer
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install package (dev extras)
+        shell: bash
+        run: |
+          pip install --upgrade pip
+          if pip install ".[dev]"; then
+            echo "installed via [dev] extra"
+          else
+            echo "[dev] extra not available; installing explicit build deps"
+            pip install .
+            pip install pyinstaller pytest pytest-qt
+          fi
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $version = python -c "import simple_pi_calculator as m; print(m.__version__)"
+          Write-Host "Package version: $version"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $expected = "v${{ steps.version.outputs.version }}"
+          $actual = "${{ github.ref_name }}"
+          if ($actual -ne $expected) {
+            Write-Error "Tag '$actual' does not match package version '$expected'."
+            exit 1
+          }
+          Write-Host "Tag '$actual' matches package version."
+
+      - name: Generate version_info.txt
+        shell: bash
+        run: |
+          if [ -f tools/write_version_info.py ]; then
+            python tools/write_version_info.py packaging/version_info.txt
+          else
+            echo "tools/write_version_info.py not present yet; skipping version resource."
+          fi
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        working-directory: packaging
+        run: |
+          pyinstaller simple_pi_calculator.spec --noconfirm --clean --distpath ../dist --workpath ../build
+
+      - name: Smoke test the frozen app
+        shell: pwsh
+        run: |
+          $exe = "dist\SimplePICalculator\SimplePICalculator.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "Expected executable not found at $exe"
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exe -ArgumentList "--self-test" -NoNewWindow -PassThru -Wait -Timeout 120
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "Self-test failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
+          Write-Host "Self-test OK"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+          }
+          $possiblePaths = @(
+            "C:\Program Files (x86)\Inno Setup 6",
+            "C:\Program Files\Inno Setup 6"
+          )
+          foreach ($p in $possiblePaths) {
+            if (Test-Path $p) {
+              echo "$p" >> $env:GITHUB_PATH
+            }
+          }
+
+      - name: Compile installer
+        shell: pwsh
+        working-directory: packaging
+        run: |
+          iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer.iss
+
+      - name: Zip onedir bundle
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist\SimplePICalculator\*" -DestinationPath "dist\SimplePICalculator-${{ steps.version.outputs.version }}-win64.zip"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimplePICalculator-${{ steps.version.outputs.version }}
+          path: |
+            dist-installer/*.exe
+            dist/SimplePICalculator-*-win64.zip
+
+      - name: Check for CHANGELOG.md
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: changelog
+        shell: bash
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            echo "path=CHANGELOG.md" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist-installer/*.exe
+            dist/SimplePICalculator-*-win64.zip
+          body_path: ${{ steps.changelog.outputs.path }}
+          fail_on_unmatched_files: true

@@ -1,0 +1,191 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Troubleshooting and message codes</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Troubleshooting and message codes</h1>
+
+<p>Sections: <a href="#reading">Reading messages</a> · <a href="#symptoms">Common problems</a> ·
+<a href="#codes">Code index</a> · <a href="#log">Log file</a></p>
+
+<h2><a name="reading"></a>Reading messages</h2>
+<p>Every problem found while importing, validating or computing appears in the <b>Messages</b> dock with:</p>
+<ul>
+<li><b>Severity</b> – <code>E_…</code> <b>error</b>: the affected item (file import, or one PWR net) is not computed;
+<code>W_…</code> <b>warning</b>: the result is computed but may be less accurate or not what you intended;
+<code>I_…</code> <b>information</b>.</li>
+<li><b>Code</b> – a stable identifier; look it up in the <a href="#codes">code index</a> below.</li>
+<li><b>Source and location</b> – file name with sheet cell (<code>Stackup!C7</code>) or line number, or <code>PWR:VDD_CORE</code>.</li>
+</ul>
+<p>Double-click a message to jump to the related tab and row. Table cells with errors are shown with a red
+background; hover for the message. Errors in one PWR net never stop the computation of the others.</p>
+
+<h2><a name="symptoms"></a>Common problems</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Symptom</th><th>Likely cause and fix</th></tr>
+<tr><td>Excel import fails with <code>E_XL_HEADER_NOT_FOUND</code></td><td>A required column is missing or named unexpectedly, or the header is below row 20. The message lists the missing columns. Rename the headers as shown on the <a href="input_stackup.html#columns">stack-up</a>, <a href="input_pwr.html#columns">PWR</a> or <a href="input_decaps.html#columns">decap</a> page. The Conductivity column must exist even if only copper rows are filled.</td></tr>
+<tr><td>A layer shows Type "Metal" that should be a dielectric</td><td>Its Conductivity cell contains a number. Clear it (or write 0).</td></tr>
+<tr><td>|Z| keeps rising towards low frequency</td><td>Expected: no voltage regulator is modelled, so the curve is capacitive at the low end. Add bulk capacitors as decap rows if you want to see their effect.</td></tr>
+<tr><td>The decap seems to have no effect / huge |Z|</td><td>Check the model: <code>1F</code> is 1 femtofarad, <code>1M</code> is 1 milliohm/millihenry. Look at the C @100 kHz and SRF columns and use <b>Preview model</b>. For <code>.s2p</code> files check the S2P mode (series vs shunt).</td></tr>
+<tr><td>Results look identical after an edit</td><td>The plot title says "(inputs changed)": results are not recomputed automatically. Press F5. Also check that the edited row is <b>Enabled</b> and assigned to the right PWR name (case-sensitive).</td></tr>
+<tr><td>A plot tab has a red icon</td><td>That PWR failed. Filter the Messages dock by its source <code>PWR:name</code>; typical causes are a missing model file or wrong layer numbers.</td></tr>
+<tr><td>Marker readout shows "n/a"</td><td>The marker frequency is outside the sweep range. Widen f start / f stop.</td></tr>
+<tr><td>VDD on deep planes is much worse than expected</td><td>The via loop length is the depth of the nearer plane; planes deep in the stack give long, inductive vias. Check h_near and L_loop in the Vias tab; consider more vias per decap or a smaller via pitch.</td></tr>
+<tr><td>Strong peaks near 1 GHz</td><td>Plane resonances of the synthetic plane (W × 1.4·D_ref). Their frequency is indicative only; see <a href="physics.html#geometry">synthetic geometry</a>.</td></tr>
+<tr><td>Computation is slow</td><td>Large planes with small drills need many cavity modes (status bar shows the count); many decaps increase the port count. Reduce the number of sweep points for exploration, or split very large decap rows.</td></tr>
+<tr><td><code>E_SINGULAR</code></td><td>Usually overlapping ports (<code>W_PORT_OVERLAP</code>) combined with ideal zero-impedance models, or zero-length vias. Separate row distances, give models a small ESR/ESL, check layer numbers.</td></tr>
+<tr><td>Yellow banner "Another Simple PI Calculator window owns the auto-save"</td><td>A second instance is running. Close it, or use Save As in this window. See <a href="project_file.html#autosave">auto-save</a>.</td></tr>
+<tr><td>Program starts with an empty project after a crash</td><td>Look for <code>W_AUTOSAVE_RECOVERED_BACKUP</code> / <code>W_AUTOSAVE_CORRUPT</code> in the Messages dock; damaged files are kept in the auto-save folder (File ▸ Show Auto-save Folder).</td></tr>
+<tr><td>Model file not found after moving a project</td><td>Relative model paths are resolved from the Excel file folder, the project folder and the Model search folder. Set the Model search folder in Vias ▸ Advanced, or fix the paths.</td></tr>
+</table>
+
+<h2><a name="codes"></a>Code index</h2>
+<p>Codes are grouped by area. "Page" links to the detailed explanation.</p>
+
+<h3><a name="excel"></a>Excel files (all tables)</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_XL_HEADER_NOT_FOUND</code></td><td>Required column(s) not found in rows 1–20.</td><td><a href="input_stackup.html#headers">Headers</a></td></tr>
+<tr><td><code>E_XL_NUMBER</code></td><td>Non-numeric text in a numeric cell.</td><td><a href="input_stackup.html#units">Units</a></td></tr>
+<tr><td><code>E_XL_UNIT</code></td><td>Unknown unit in a header.</td><td><a href="input_stackup.html#units">Units</a></td></tr>
+<tr><td><code>E_XL_FORMULA_NO_VALUE</code></td><td>Formula cell without cached value; open and save in Excel.</td><td><a href="input_stackup.html#units">Units</a></td></tr>
+<tr><td><code>E_XL_BOOL</code></td><td>Dummy Cap cell is not a yes/no value.</td><td><a href="input_decaps.html#columns">Decaps</a></td></tr>
+<tr><td><code>W_XL_DUP_COLUMN</code></td><td>Two columns match the same field; second ignored.</td><td><a href="input_stackup.html#headers">Headers</a></td></tr>
+<tr><td><code>W_XL_COLUMN_IGNORED</code></td><td>Legacy height/length/PAD column ignored in the PWR list.</td><td><a href="input_pwr.html#columns">PWR list</a></td></tr>
+</table>
+
+<h3><a name="stack"></a>Stack-up</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_STACK_EMPTY</code></td><td>No layer rows.</td><td rowspan="12"><a href="input_stackup.html#messages">Stack-up</a></td></tr>
+<tr><td><code>E_STACK_LAYER_NUM</code></td><td>Layer number missing, not an integer or &lt; 1.</td></tr>
+<tr><td><code>E_STACK_LAYER_DUP</code></td><td>Duplicate layer number.</td></tr>
+<tr><td><code>W_STACK_LAYER_GAP</code></td><td>Layer numbers not contiguous.</td></tr>
+<tr><td><code>E_STACK_THICKNESS</code></td><td>Thickness missing or ≤ 0.</td></tr>
+<tr><td><code>E_STACK_DK</code></td><td>Dielectric without Dk or Dk &lt; 1.</td></tr>
+<tr><td><code>W_STACK_DF_MISSING</code></td><td>Dielectric without Df (0 used).</td></tr>
+<tr><td><code>E_STACK_DF</code></td><td>Df &lt; 0 or &gt; 1 (percent entered?).</td></tr>
+<tr><td><code>W_STACK_SIGMA_RANGE</code></td><td>Metal conductivity outside 1e5 … 1e8 S/m.</td></tr>
+<tr><td><code>W_STACK_METAL_DKDF</code></td><td>Info: Dk/Df on a metal row ignored.</td></tr>
+<tr><td><code>W_STACK_ADJ_METAL</code></td><td>Info: two adjacent metal rows.</td></tr>
+<tr><td><code>W_STACK_METAL_BETWEEN</code>, <code>E_STACK_NO_DIELECTRIC</code></td><td>Metal between PWR and GND (treated as cleared) / no dielectric between them.</td></tr>
+</table>
+
+<h3><a name="pwr"></a>PWR nets and plane geometry</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_PWR_NAME_DUP</code></td><td>Duplicate PWR name.</td><td rowspan="8"><a href="input_pwr.html#messages">PWR list</a></td></tr>
+<tr><td><code>E_PWR_LAYER_NOT_FOUND</code></td><td>PWR or GND layer not in the stack-up.</td></tr>
+<tr><td><code>E_PWR_LAYER_NOT_METAL</code></td><td>PWR or GND layer is a dielectric.</td></tr>
+<tr><td><code>E_PWR_SAME_LAYER</code></td><td>PWR layer = GND layer.</td></tr>
+<tr><td><code>E_PWR_DIM</code></td><td>Width ≤ 0.</td></tr>
+<tr><td><code>E_PWR_WIDTH_TOO_SMALL</code></td><td>Width cannot hold a port with the margins (W &lt; 2.5 × port width).</td></tr>
+<tr><td><code>W_PWR_FAR_GND</code></td><td>More than 3 layers between PWR and GND.</td></tr>
+<tr><td><code>W_PWR_NO_DECAPS</code></td><td>No enabled decap rows: square plane, plane-only result.</td></tr>
+</table>
+
+<h3><a name="decap"></a>Decap rows and placement</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>Model file not found.</td><td rowspan="8"><a href="input_decaps.html#messages">Decap list</a></td></tr>
+<tr><td><code>E_DECAP_FILE_TYPE</code></td><td>Unsupported model file extension.</td></tr>
+<tr><td><code>E_DECAP_DISTANCE</code></td><td>Distance to PAD ≤ 0.</td></tr>
+<tr><td><code>E_DREF_TOO_SMALL</code></td><td>Largest distance too small for the PAD port to fit in the plane.</td></tr>
+<tr><td><code>W_DECAP_TOO_CLOSE</code></td><td>Decap port overlaps the PAD port.</td></tr>
+<tr><td><code>W_DECAP_CLIPPED</code></td><td>Sub-rows extend beyond the plane; ports moved to the edge.</td></tr>
+<tr><td><code>W_PORT_OVERLAP</code></td><td>Two ports overlap.</td></tr>
+<tr><td><code>I_DUMMY_SINGLE</code></td><td>Dummy Cap on a single capacitor: no effect.</td></tr>
+</table>
+
+<h3><a name="via"></a>Vias</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_VIA_ANTIPAD</code></td><td>Anti-pad ≤ drill.</td><td rowspan="5"><a href="input_vias.html#messages">Vias</a></td></tr>
+<tr><td><code>E_VIA_COUNT</code></td><td>Vias per decap odd or &lt; 2.</td></tr>
+<tr><td><code>E_VIA_PITCH</code></td><td>Via pitch ≤ drill.</td></tr>
+<tr><td><code>W_VIA_PITCH_SMALL</code></td><td>GND via inside the PWR via's anti-pad.</td></tr>
+<tr><td><code>W_VIA_ZERO_LENGTH</code></td><td>Nearer plane is layer 1: zero via length.</td></tr>
+</table>
+
+<h3><a name="spice"></a>SPICE models</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_SPICE_UNSUPPORTED</code></td><td>Unsupported statement or element.</td><td rowspan="14"><a href="spice_models.html#messages">SPICE</a></td></tr>
+<tr><td><code>E_SPICE_EXPR</code></td><td>Expression error, unknown parameter, division by zero.</td></tr>
+<tr><td><code>E_SPICE_PARAM_REDEF</code></td><td>Local .PARAM redefines a subcircuit parameter.</td></tr>
+<tr><td><code>E_SPICE_RECURSION</code></td><td>Recursive or too deeply nested subcircuits.</td></tr>
+<tr><td><code>E_SPICE_UNKNOWN_SUBCKT</code></td><td>Subcircuit not found.</td></tr>
+<tr><td><code>E_SPICE_PIN_COUNT</code></td><td>Top-level subcircuit does not have 2 pins.</td></tr>
+<tr><td><code>E_SPICE_NO_SUBCKT</code></td><td>No .SUBCKT in the file.</td></tr>
+<tr><td><code>W_SPICE_OPTION_IGNORED</code></td><td>Element option ignored.</td></tr>
+<tr><td><code>W_SPICE_IGNORED</code></td><td>Statement ignored (.MODEL, .OPTIONS, …).</td></tr>
+<tr><td><code>W_SPICE_UNKNOWN_PARAM</code></td><td>Override of an undeclared parameter.</td></tr>
+<tr><td><code>W_SPICE_GLOBAL_GND</code></td><td>Node 0/GND inside a subcircuit joined with pin 2.</td></tr>
+<tr><td><code>W_SPICE_MULTI_TOP</code></td><td>Several top-level candidates; first 2-pin used.</td></tr>
+<tr><td><code>W_K_UNITY</code></td><td>Coupling coefficient equals 1.</td></tr>
+<tr><td><code>W_MNA_FLOATING</code></td><td>Floating node in the model.</td></tr>
+</table>
+
+<h3><a name="s2p"></a>Touchstone models</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_S2P_PARAM</code></td><td>Not S-parameters.</td><td rowspan="7"><a href="touchstone.html#messages">Touchstone</a></td></tr>
+<tr><td><code>E_S2P_V2</code></td><td>Touchstone 2.0 file.</td></tr>
+<tr><td><code>E_S2P_FORMAT</code></td><td>Malformed data.</td></tr>
+<tr><td><code>W_S2P_NOISE_IGNORED</code></td><td>Noise block ignored.</td></tr>
+<tr><td><code>W_S2P_SINGULAR</code></td><td>Conversion singular (wrong S2P mode?).</td></tr>
+<tr><td><code>W_S2P_EXTRAP_LOW</code></td><td>Sweep below file range.</td></tr>
+<tr><td><code>W_S2P_EXTRAP_HIGH</code></td><td>Sweep above file range.</td></tr>
+</table>
+
+<h3><a name="compute"></a>Sweep and computation</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_SWEEP_RANGE</code></td><td>Invalid sweep range or point count.</td><td rowspan="4"><a href="results.html#rmessages">Results</a></td></tr>
+<tr><td><code>W_SWEEP_HIGH</code></td><td>f stop above 3 GHz.</td></tr>
+<tr><td><code>W_MODES_CAPPED</code></td><td>Mode count limit reached.</td></tr>
+<tr><td><code>E_SINGULAR</code></td><td>Port reduction failed at a frequency.</td></tr>
+</table>
+
+<h3><a name="project"></a>Projects and auto-save</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
+<tr><td><code>E_PROJECT_FORMAT</code></td><td>Not a valid project file.</td><td rowspan="7"><a href="project_file.html#messages">Projects</a></td></tr>
+<tr><td><code>E_PROJECT_NEWER</code></td><td>Project from a newer version.</td></tr>
+<tr><td><code>I_PROJECT_MIGRATED</code></td><td>Older project converted.</td></tr>
+<tr><td><code>W_PROJECT_UNKNOWN_KEY</code></td><td>Unknown key ignored.</td></tr>
+<tr><td><code>W_AUTOSAVE_RECOVERED_BACKUP</code></td><td>Damaged auto-save; backup restored.</td></tr>
+<tr><td><code>W_AUTOSAVE_CORRUPT</code></td><td>Auto-save and backup damaged; defaults used.</td></tr>
+<tr><td><code>W_AUTOSAVE_NEWER</code></td><td>Auto-save from a newer version moved aside.</td></tr>
+</table>
+
+<h2><a name="log"></a>Log file</h2>
+<p>Unexpected program errors are shown in a dialog with the technical details and written to a log file:</p>
+<pre>
+Windows:  %LOCALAPPDATA%\SimplePICalculator\logs\app.log
+</pre>
+<p>When reporting a problem, include this file, the project (<b>File ▸ Save As</b>) and the model/Excel files it uses.</p>
+
+<hr>
+<p class="nav">Previous: <a href="project_file.html">Projects and auto-save</a> | Next: <a href="limitations.html">Limitations</a></p>
+</body>
+</html>

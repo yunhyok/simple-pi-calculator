@@ -1,0 +1,104 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Decap models: Touchstone .s2p files</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Decap models: Touchstone .s2p files</h1>
+
+<p>As an alternative to SPICE models, a decap can be described by a measured (or vendor-supplied)
+2-port S-parameter file in <b>Touchstone version 1</b> format (<code>.s2p</code>). The capacitor impedance
+Z(f) is extracted from S21 using the fixture type, then interpolated onto the sweep frequencies.</p>
+
+<h2><a name="format"></a>File format</h2>
+<pre>
+! Synthetic series-through file of a 100 nF 0402 capacitor     &lt;- comment ("!" anywhere on a line)
+# HZ S RI R 50                                                  &lt;- option line
+1000        0.9999  -0.0001   0.0029  0.6283   0.0029  0.6283   0.9999 -0.0001
+1024.2      ...
+</pre>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Item</th><th>Rule</th></tr>
+<tr><td>Comments</td><td><code>!</code> starts a comment anywhere on a line.</td></tr>
+<tr><td>Option line</td><td><code># [unit] [parameter] [format] [R z0]</code>, tokens in any order, case-insensitive. Defaults: <code># GHZ S MA R 50</code>. Only the first option line counts.</td></tr>
+<tr><td>Frequency unit</td><td><code>HZ</code>, <code>KHZ</code>, <code>MHZ</code>, <code>GHZ</code>.</td></tr>
+<tr><td>Parameter</td><td>Must be <code>S</code> (Y, Z, H, G files give <code>E_S2P_PARAM</code>).</td></tr>
+<tr><td>Format</td><td><code>MA</code> magnitude / angle in degrees, <code>DB</code> dB (20·log10) / angle in degrees, <code>RI</code> real / imaginary.</td></tr>
+<tr><td>Data</td><td>9 numbers per frequency: <code>f S11 S21 S12 S22</code>, each as a pair. A record may span several lines. <b>Version 1 order is 11, 21, 12, 22.</b></td></tr>
+<tr><td>Frequencies</td><td>Strictly increasing, at least 2 points. A frequency that is not larger than the previous one starts a noise-parameter block, which is ignored (<code>W_S2P_NOISE_IGNORED</code>).</td></tr>
+<tr><td>Version 2 files</td><td>Keyword lines such as <code>[Version] 2.0</code> are not supported (<code>E_S2P_V2</code>). Export the file as version 1.</td></tr>
+</table>
+
+<h2><a name="fixtures"></a>Series-through or shunt-through?</h2>
+<p>The same capacitor gives very different S21 depending on how it was mounted in the test fixture. You must
+tell the tool which fixture was used: per decap row in the <b>S2P Mode</b> column, or globally with
+<b>S2P default mode</b> in Vias ▸ Advanced (default: <b>series</b>).</p>
+<p><img src="img/s2p_series_shunt.png" width="760" height="321" alt="Series-through and shunt-through fixtures with formulas"></p>
+<p class="caption">Figure 1 – The two fixture types and the conversion used for each.</p>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th>Mode</th><th>Fixture</th><th>S21</th><th>Impedance used</th></tr>
+<tr><td><code>series</code></td><td>Capacitor between the centre conductors of port 1 and port 2</td><td>S21 = 2·Z0 / (2·Z0 + Z)</td><td><b>Z = 2·Z0·(1 − S21) / S21</b></td></tr>
+<tr><td><code>shunt</code></td><td>Capacitor from the through line to ground</td><td>S21 = 2·Z / (2·Z + Z0)</td><td><b>Z = Z0·S21 / (2·(1 − S21))</b></td></tr>
+</table>
+<p>Z0 is the reference impedance from the option line (<code>R 50</code>). To reduce measurement noise the
+average (S21 + S12)/2 is used.</p>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="note"><b>Which one should I choose?</b>
+<ul>
+<li>Use the mode that matches how the file was <b>measured</b> – check the vendor's documentation or the file comments.
+Vendor files for decoupling capacitors are very often <b>shunt-through</b>; set the S2P Mode column to <code>shunt</code> for them.</li>
+<li>Series-through is inaccurate for milliohm impedances: for |Z| ≪ Z0 the formula depends on 1 − S21 ≈ Z/(2·Z0),
+which is only 5e-5 for 5 mΩ – below typical instrument uncertainty. Shunt-through is the preferred method for decaps
+near and above their resonance [Novak00].</li>
+<li>A wrong mode produces a completely wrong capacitor (typically off by orders of magnitude). Use <b>Preview model</b>
+and check that C @100 kHz and SRF are plausible.</li>
+<li>A formula sometimes found in notes, Z = 2·Z0·S21/(1 − S21), is wrong for both fixtures and is not used.</li>
+</ul></td></tr>
+</table>
+
+<h2><a name="interp"></a>Interpolation and extrapolation</h2>
+<ul>
+<li><b>Inside the file range:</b> log|Z| and the unwrapped phase of Z are interpolated linearly versus log f.</li>
+<li><b>Below the first frequency:</b> Z is extended as a series R–C fitted to the first point (a capacitor keeps
+falling at −20 dB/decade); if that point is not capacitive, it is held constant. Warning <code>W_S2P_EXTRAP_LOW</code>.</li>
+<li><b>Above the last frequency:</b> Z is extended as a series R–L fitted to the last point; if that point is not
+inductive, it is held constant. Warning <code>W_S2P_EXTRAP_HIGH</code>.</li>
+</ul>
+<p>Choose files that cover your sweep range (default 100 kHz – 1 GHz) to avoid extrapolation. Note that a measured
+file includes the fixture's own parasitics; they are not removed.</p>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="26%">Code</th><th>Meaning</th><th width="30%">What to do</th></tr>
+<tr><td><code>E_S2P_PARAM</code></td><td>The option line declares Y, Z, H or G parameters.</td><td>Export S-parameters.</td></tr>
+<tr><td><code>E_S2P_V2</code></td><td>Touchstone 2.0 keywords found.</td><td>Export as Touchstone 1.x.</td></tr>
+<tr><td><code>E_S2P_FORMAT</code></td><td>The number of values is not a multiple of 9, fewer than 2 frequencies, or the data cannot be read.</td><td>Check that it is a 2-port file (<code>.s2p</code>) and not truncated.</td></tr>
+<tr><td><code>W_S2P_NOISE_IGNORED</code></td><td>A noise-parameter block after the S-parameters was ignored.</td><td>Nothing.</td></tr>
+<tr><td><code>W_S2P_SINGULAR</code></td><td>S21 ≈ 0 (series) or S21 ≈ 1 (shunt) at some frequency; the value was clamped.</td><td>Usually the wrong S2P mode – check it.</td></tr>
+<tr><td><code>W_S2P_EXTRAP_LOW</code></td><td>The sweep starts below the first frequency of the file.</td><td>Use a file with lower start frequency or raise f start.</td></tr>
+<tr><td><code>W_S2P_EXTRAP_HIGH</code></td><td>The sweep ends above the last frequency of the file.</td><td>Use a wider file or lower f stop.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="spice_models.html">SPICE models</a> | Next: <a href="physics.html">Modelling concept</a></p>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="900" height="500" viewBox="0 0 900 500">
+  <title>Dummy Cap: capacitors sharing one via set</title>
+  <rect x="0" y="0" width="900" height="500" fill="#ffffff"/>
+  <text x="450" y="28" font-family="Arial" font-size="18" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Dummy Cap option: N = 5 capacitors in one decap row (top view)</text>
+  <rect x="15" y="50" width="870" height="190" rx="6" fill="#f7f9fc" stroke="#c9d6e8" stroke-width="1"/>
+  <text x="30" y="74" font-family="Arial" font-size="14" font-weight="bold" fill="#1a3d6d">Dummy Cap = No  →  P = N = 5 via sets (cavity ports), 1 capacitor per port</text>
+  <rect x="72" y="95" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="58" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="106" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="63" y="117" width="6" height="48" fill="#c87533"/>
+  <rect x="111" y="117" width="6" height="48" fill="#c87533"/>
+  <circle cx="66" cy="165" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="114" cy="165" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="50" y="151" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="90" y="200" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 1</text>
+  <text x="90" y="216" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <rect x="192" y="95" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="178" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="226" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="183" y="117" width="6" height="48" fill="#c87533"/>
+  <rect x="231" y="117" width="6" height="48" fill="#c87533"/>
+  <circle cx="186" cy="165" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="234" cy="165" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="170" y="151" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="210" y="200" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 2</text>
+  <text x="210" y="216" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <rect x="312" y="95" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="298" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="346" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="303" y="117" width="6" height="48" fill="#c87533"/>
+  <rect x="351" y="117" width="6" height="48" fill="#c87533"/>
+  <circle cx="306" cy="165" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="354" cy="165" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="290" y="151" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="330" y="200" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 3</text>
+  <text x="330" y="216" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <rect x="432" y="95" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="418" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="466" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="423" y="117" width="6" height="48" fill="#c87533"/>
+  <rect x="471" y="117" width="6" height="48" fill="#c87533"/>
+  <circle cx="426" cy="165" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="474" cy="165" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="410" y="151" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="450" y="200" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 4</text>
+  <text x="450" y="216" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <rect x="552" y="95" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="538" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="586" y="95" width="16" height="22" fill="#c87533"/>
+  <rect x="543" y="117" width="6" height="48" fill="#c87533"/>
+  <rect x="591" y="117" width="6" height="48" fill="#c87533"/>
+  <circle cx="546" cy="165" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="594" cy="165" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="530" y="151" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="570" y="200" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 5</text>
+  <text x="570" y="216" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <text x="650" y="120" font-family="Arial" font-size="12" fill="#333333">Each port load:</text>
+  <text x="650" y="142" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_L = Z_cap + Z_via,dec</text>
+  <text x="650" y="170" font-family="Arial" font-size="11" fill="#555555">5 via sets are placed across the</text>
+  <text x="650" y="185" font-family="Arial" font-size="11" fill="#555555">plane width (5 ports in the row).</text>
+  <rect x="15" y="255" width="870" height="235" rx="6" fill="#fdf8f2" stroke="#e7d3bd" stroke-width="1"/>
+  <text x="30" y="279" font-family="Arial" font-size="14" font-weight="bold" fill="#8a4a16">Dummy Cap = Yes  →  P = ceil(5/2) = 3 via sets, capacitors per port [2, 2, 1]</text>
+  <rect x="92" y="300" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="78" y="300" width="16" height="22" fill="#c87533"/>
+  <rect x="126" y="300" width="16" height="22" fill="#c87533"/>
+  <rect x="92" y="336" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="78" y="336" width="16" height="22" fill="#c87533"/>
+  <rect x="126" y="336" width="16" height="22" fill="#c87533"/>
+  <text x="110" y="351" font-family="Arial" font-size="10" fill="#ffffff" text-anchor="middle">dummy</text>
+  <rect x="83" y="322" width="6" height="14" fill="#c87533"/>
+  <rect x="131" y="322" width="6" height="14" fill="#c87533"/>
+  <rect x="83" y="358" width="6" height="42" fill="#c87533"/>
+  <rect x="131" y="358" width="6" height="42" fill="#c87533"/>
+  <circle cx="86" cy="400" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="134" cy="400" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="70" y="386" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="110" y="435" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 1</text>
+  <text x="110" y="451" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">2 caps</text>
+  <rect x="282" y="300" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="268" y="300" width="16" height="22" fill="#c87533"/>
+  <rect x="316" y="300" width="16" height="22" fill="#c87533"/>
+  <rect x="282" y="336" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="268" y="336" width="16" height="22" fill="#c87533"/>
+  <rect x="316" y="336" width="16" height="22" fill="#c87533"/>
+  <text x="300" y="351" font-family="Arial" font-size="10" fill="#ffffff" text-anchor="middle">dummy</text>
+  <rect x="273" y="322" width="6" height="14" fill="#c87533"/>
+  <rect x="321" y="322" width="6" height="14" fill="#c87533"/>
+  <rect x="273" y="358" width="6" height="42" fill="#c87533"/>
+  <rect x="321" y="358" width="6" height="42" fill="#c87533"/>
+  <circle cx="276" cy="400" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="324" cy="400" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="260" y="386" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="300" y="435" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 2</text>
+  <text x="300" y="451" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">2 caps</text>
+  <rect x="472" y="336" width="36" height="22" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="458" y="336" width="16" height="22" fill="#c87533"/>
+  <rect x="506" y="336" width="16" height="22" fill="#c87533"/>
+  <rect x="463" y="358" width="6" height="42" fill="#c87533"/>
+  <rect x="511" y="358" width="6" height="42" fill="#c87533"/>
+  <circle cx="466" cy="400" r="8" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="514" cy="400" r="8" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <rect x="450" y="386" width="80" height="28" fill="none" stroke="#3c7a2e" stroke-width="1.2" stroke-dasharray="4,3"/>
+  <text x="490" y="435" font-family="Arial" font-size="12" fill="#2d5e22" text-anchor="middle">port 3</text>
+  <text x="490" y="451" font-family="Arial" font-size="11" fill="#555555" text-anchor="middle">1 cap</text>
+  <text x="590" y="320" font-family="Arial" font-size="12" fill="#333333">Ports with 2 capacitors:</text>
+  <text x="590" y="342" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_L = Z_cap / 2 + Z_via,dec</text>
+  <text x="590" y="372" font-family="Arial" font-size="12" fill="#333333">Last port when N is odd:</text>
+  <text x="590" y="394" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_L = Z_cap + Z_via,dec</text>
+  <text x="590" y="424" font-family="Arial" font-size="11" fill="#555555">The shared via set stays in series and is</text>
+  <text x="590" y="439" font-family="Arial" font-size="11" fill="#555555">not divided. N = 1: flag has no effect.</text>
+  <text x="30" y="478" font-family="Arial" font-size="11" fill="#555555">Legend: red = PWR via, blue = GND via, dashed box = one via set = one cavity port. Mutual coupling between the two capacitors is neglected.</text>
+</svg>

@@ -1,0 +1,157 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Input: Decap list</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Input: Decap list</h1>
+
+<p>The decap list assigns groups of identical decoupling capacitors to the PWR nets. One row = one
+<b>decap row</b>: N capacitors of the same model, at the same distance from the PAD, spread across the plane
+width. Rows are imported from Excel (<b>Decaps</b> tab ▸ <b>Import…</b> or <b>File ▸ Import ▸ Decap
+List…</b>) or added with <b>Add</b> (the PWR name is pre-filled from the filter box).</p>
+
+<p>Other inputs page: <a href="input_stackup.html">Stack-up</a> · <a href="input_vias.html">Vias</a> ·
+<a href="input_pwr.html">PWR list</a></p>
+
+<h2><a name="example"></a>Example</h2>
+<p>Bundled file <code>examples/decap_list.xlsx</code>:</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>PWR Name</th><th>Decap File Name</th><th>Number of Decaps</th><th>Distance to PAD (mm)</th><th>Dummy Cap</th></tr>
+<tr><td>VDD_CORE</td><td>cap_0402_100nF.mod</td><td>10</td><td>8</td><td>No</td></tr>
+<tr><td>VDD_CORE</td><td>cap_0603_10uF.mod</td><td>4</td><td>15</td><td>No</td></tr>
+<tr><td>VDD_IO</td><td>cap_0402_100nF.mod</td><td>4</td><td>5</td><td>Yes</td></tr>
+<tr><td>VDD_IO</td><td>cap_0603_10uF.mod</td><td>1</td><td>10</td><td>No</td></tr>
+</table>
+<p>Result: VDD_CORE gets 14 decap ports on a 60 × 21 mm plane. VDD_IO gets 3 decap ports on a
+30 × 14 mm plane: two via sets carrying two 100 nF capacitors each at y = 7 mm (x = 9.06 and 20.94 mm) and
+one via set with the 10 µF capacitor at (15, 12) mm; the PAD is at (15, 2) mm.</p>
+
+<h2><a name="columns"></a>Columns</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="14%">Field</th><th width="9%">Required</th><th width="32%">Accepted headers (rule)</th><th>Content</th></tr>
+<tr><td>PWR name</td><td>yes</td><td>contains <code>pwr</code>, <code>power</code>, <code>net</code> or <code>rail</code>: <code>PWR Name</code>, <code>Net</code>, <code>Rail</code></td><td>Must match a name in the PWR list exactly (case-sensitive).</td></tr>
+<tr><td>Model file</td><td>yes</td><td>contains <code>file</code>, <code>model</code> or <code>decap</code> (tested last): <code>Decap File Name</code>, <code>Model</code>, <code>Model File</code></td><td>Path of a SPICE (<code>.mod</code>, <code>.lib</code>, <code>.sp</code>, <code>.cir</code>, <code>.sub</code>, <code>.inc</code>) or Touchstone (<code>.s2p</code>) file, absolute or relative (see <a href="#paths">Paths</a>).</td></tr>
+<tr><td>Count</td><td>yes</td><td>contains <code>number</code>, <code>count</code>, <code>qty</code>, <code>quantity</code> or <code>#</code>, or exactly <code>N</code>: <code>Number of Decaps</code>, <code>Qty</code>, <code>Count</code></td><td>Integer ≥ 1: number of capacitors in the row.</td></tr>
+<tr><td>Distance</td><td>yes</td><td>contains <code>dist</code>: <code>Distance to PAD (mm)</code>, <code>Dist</code></td><td>Distance &gt; 0 between PAD and the row along the plane (see <a href="#distance">below</a>). Unit from the header, default mm.</td></tr>
+<tr><td>Subckt</td><td>no</td><td>contains <code>subckt</code> or <code>subcircuit</code></td><td>Name of the subcircuit to use when a SPICE file contains several. Empty = automatic.</td></tr>
+<tr><td>S2P mode</td><td>no</td><td>contains <code>s2p</code>, <code>mode</code> or <code>config</code></td><td><code>series</code> or <code>shunt</code> (a prefix such as <code>ser</code>/<code>sh</code> is enough). Only for <code>.s2p</code> files; empty = project default.</td></tr>
+<tr><td>Dummy Cap</td><td>no</td><td>contains <code>dummy</code></td><td>Yes/No. Column absent = No for all rows. See <a href="#dummy">Dummy Cap</a>.</td></tr>
+</table>
+<p>Rules are tested in the order Subckt → S2P mode → Dummy → Distance → Count → PWR name → Model file, so
+that e.g. <code>Number of Decaps</code> is taken as the count and not as the model file. The sheet is the first
+one whose name contains <code>decap</code> or <code>cap</code>.</p>
+
+<h3>Yes/No cells</h3>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Read as Yes</th><th>Read as No</th></tr>
+<tr><td>Excel TRUE, 1, <code>yes</code>, <code>y</code>, <code>true</code>, <code>x</code>, <code>✓</code></td><td>Excel FALSE, 0, <code>no</code>, <code>n</code>, <code>false</code>, empty cell</td></tr>
+</table>
+<p>Text is compared case-insensitively. Anything else (e.g. <code>maybe</code>) gives <code>E_XL_BOOL</code> with the cell reference.</p>
+
+<h2><a name="table"></a>The Decaps table</h2>
+<p>Columns: Enabled, PWR Name (drop-down list), Decap File (type a path or press <b>…</b> to browse), Subckt,
+S2P Mode, Count, Distance mm, Dummy Cap (check box), and the derived columns <b>Via sets</b> (number of cavity
+ports of the row), <b>C @100 kHz</b> (capacitance of one model at 100 kHz) and <b>SRF MHz</b> (self-resonance
+frequency of one model). <b>Preview model</b> plots |Z| of the selected model alone – a quick check that
+the file is read as expected.</p>
+<p>The filter box at the top ("All PWRs" or one name) follows the row selected in the PWR Nets tab.</p>
+
+<h2><a name="distance"></a>Distance to PAD and placement</h2>
+<p>The real component coordinates are not needed. For each PWR net the tool places:</p>
+<ul>
+<li>the <b>PAD</b> at x = W/2, y = 0.2 × D_ref, where D_ref is the largest distance of the net;</li>
+<li>each <b>decap row</b> on the line y = 0.2 × D_ref + distance, i.e. <b>Distance to PAD is measured along y</b>,
+perpendicular to the row;</li>
+<li>the via sets of a row <b>evenly across the width</b>, keeping a margin of 10 % of W plus half a port at each
+side; a row with a single via set sits directly opposite the PAD at x = W/2;</li>
+<li>if a row does not fit in one line (usable width / number of via sets &lt; port width), it is split into
+several sub-rows at a pitch of one port width, centred on the row line.</li>
+</ul>
+<p><img src="img/plane_placement.png" width="760" height="583" alt="Synthetic plane with PAD and decap rows"></p>
+<p class="caption">Figure 1 – Placement of the PAD and two decap rows. Capacitors near the plane sides are farther from
+the PAD than the row distance.</p>
+<p>This mimics a row of capacitors along a board edge or a capacitor bank opposite the IC. Capacitors
+spread across the width are farther from the PAD than the entered distance (√((x − W/2)² + d²)), which is
+physically correct for such a row. For a cluster of capacitors all close to the IC, use a small width or
+enter the capacitors as several rows with their actual distances.</p>
+
+<h2><a name="dummy"></a>Dummy Cap</h2>
+<p>A <b>dummy cap</b> is a capacitor without vias of its own: it is connected by pads/traces to an adjacent
+capacitor and shares that capacitor's via set. Designers use this to place more capacitance than there is
+room for vias. With <b>Dummy Cap = Yes</b>, half of the capacitors of the row are assumed to be dummies:</p>
+<pre>
+via sets (ports)    P = ceil(N / 2)
+capacitors per port = 2, 2, …, 2       and 1 on the last port when N is odd
+load of a port      Z_L = Z_cap / (capacitors on the port) + Z_via,dec
+</pre>
+<p><img src="img/dummy_cap.png" width="760" height="422" alt="Dummy cap: capacitors sharing via sets, N = 5 gives ports 2, 2, 1"></p>
+<p class="caption">Figure 2 – The same 5 capacitors without and with the Dummy Cap option.</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>N</th><th>Dummy Cap = No</th><th>Dummy Cap = Yes</th></tr>
+<tr><td>1</td><td>1 port [1]</td><td>1 port [1] – flag has no effect (<code>I_DUMMY_SINGLE</code>)</td></tr>
+<tr><td>2</td><td>2 ports [1, 1]</td><td>1 port [2]</td></tr>
+<tr><td>4</td><td>4 ports [1, 1, 1, 1]</td><td>2 ports [2, 2]</td></tr>
+<tr><td>5</td><td>5 ports [1, 1, 1, 1, 1]</td><td>3 ports [2, 2, 1]</td></tr>
+<tr><td>7</td><td>7 ports</td><td>4 ports [2, 2, 2, 1]</td></tr>
+</table>
+<p>The two capacitors on one port are ideal parallel paths; the extra pad/trace between them and their
+mutual coupling are neglected (use the mounting inductance setting for a rough allowance). The shared via set
+stays in series, so a dummy pair gives less benefit than two capacitors with their own vias.</p>
+
+<h2><a name="paths"></a>Where model files are searched</h2>
+<p>For a relative path the first existing location wins:</p>
+<ol>
+<li>the path itself if it is absolute;</li>
+<li>relative to the folder of the imported decap Excel file;</li>
+<li>relative to the folder of the project file (<code>.spical.json</code>);</li>
+<li>relative to the <b>Model search folder</b> (Vias tab ▸ Advanced).</li>
+</ol>
+<p>The file extension selects the reader: <code>.mod .lib .sp .cir .sub .inc</code> → SPICE
+(<a href="spice_models.html">format</a>), <code>.s2p</code> → Touchstone (<a href="touchstone.html">format</a>).
+Identical models (same file, subcircuit and S2P mode) are computed only once.</p>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Code</th><th>Meaning</th><th width="34%">What to do</th></tr>
+<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>The model file was not found in any search location.</td><td>Correct the path, or set the Model search folder.</td></tr>
+<tr><td><code>E_DECAP_FILE_TYPE</code></td><td>Unsupported file extension.</td><td>Use a SPICE extension or <code>.s2p</code>; rename <code>.txt</code> models.</td></tr>
+<tr><td><code>E_DECAP_DISTANCE</code></td><td>Distance is zero or negative.</td><td>Enter the distance in mm (&gt; 0).</td></tr>
+<tr><td><code>E_DREF_TOO_SMALL</code></td><td>The largest distance is so small that the PAD port does not fit inside the plane (0.2 × D_ref &lt; half the PAD port width), or the PAD port is wider than the plane.</td><td>Distances below about 0.6 mm are not meaningful with a 0.2 mm drill; increase the distance or W.</td></tr>
+<tr><td><code>W_DECAP_TOO_CLOSE</code></td><td>A row is closer to the PAD than the port sizes: the decap port overlaps the PAD port footprint.</td><td>Check the distance; results for overlapping ports are unphysical.</td></tr>
+<tr><td><code>W_DECAP_CLIPPED</code></td><td>A row with many sub-rows extends beyond the plane; ports were moved to the plane edge.</td><td>Increase W, reduce the count, or split the row.</td></tr>
+<tr><td><code>W_PORT_OVERLAP</code></td><td>Two ports overlap (e.g. two rows with almost equal distance).</td><td>Merge the rows or separate their distances by more than a port width.</td></tr>
+<tr><td><code>I_DUMMY_SINGLE</code></td><td>Dummy Cap set on a row with only one capacitor; no effect.</td><td>Nothing.</td></tr>
+<tr><td><code>E_XL_BOOL</code></td><td>A Dummy Cap cell is neither yes nor no.</td><td>Use Yes/No, 1/0 or TRUE/FALSE.</td></tr>
+<tr><td>unknown PWR name</td><td>The PWR Name of a row does not exist in the PWR list.</td><td>Fix the spelling (case-sensitive).</td></tr>
+<tr><td><code>E_SPICE_*</code>, <code>W_SPICE_*</code>, <code>E_S2P_*</code>, <code>W_S2P_*</code></td><td>Problems inside a model file.</td><td>See <a href="spice_models.html#messages">SPICE</a> and <a href="touchstone.html#messages">Touchstone</a>.</td></tr>
+</table>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="tip"><b>Tips.</b> Bulk capacitors are entered as ordinary rows (typically a large distance, count 1–4).
+Two rows with the same distance on the same PWR are placed on the same line and their ports may overlap – combine them into one row with the total count
+if they use the same model, or give them slightly different distances (more than one port width apart).</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="input_pwr.html">PWR list</a> | Next: <a href="spice_models.html">SPICE models</a></p>
+</body>
+</html>

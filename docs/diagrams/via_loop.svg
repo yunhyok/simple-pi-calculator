@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="900" height="500" viewBox="0 0 900 500">
+  <title>Via pair loop: pitch, nearer plane, anti-pad segment, cavity segment</title>
+  <rect x="0" y="0" width="900" height="500" fill="#ffffff"/>
+  <text x="450" y="28" font-family="Arial" font-size="18" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Via pair loop model (one PWR via + one GND via)</text>
+
+  <!-- ===== side view ===== -->
+  <text x="40" y="58" font-family="Arial" font-size="13" font-weight="bold" fill="#333333">Side view</text>
+  <!-- dielectric above nearer plane -->
+  <rect x="40" y="110" width="460" height="120" fill="#cfe8c6"/>
+  <!-- nearer plane (GND) with anti-pad around PWR via -->
+  <rect x="40" y="230" width="460" height="26" fill="#c87533"/>
+  <rect x="120" y="230" width="60" height="26" fill="#cfe8c6"/>
+  <!-- cavity dielectric -->
+  <rect x="40" y="256" width="460" height="74" fill="#e6f4e1"/>
+  <!-- far plane (PWR) -->
+  <rect x="40" y="330" width="460" height="26" fill="#c87533"/>
+  <text x="190" y="248" font-family="Arial" font-size="11" font-weight="bold" fill="#ffffff">GND (nearer plane)</text>
+  <text x="190" y="348" font-family="Arial" font-size="11" font-weight="bold" fill="#ffffff">PWR (far plane)</text>
+  <text x="46" y="124" font-family="Arial" font-size="11" fill="#2d5e22">Top surface, z = 0</text>
+
+  <!-- loop area -->
+  <rect x="160" y="110" width="160" height="120" fill="#fff1a8"/>
+  <text x="240" y="160" font-family="Arial" font-size="12" font-weight="bold" fill="#6b5a00" text-anchor="middle">L_pair</text>
+  <text x="240" y="176" font-family="Arial" font-size="11" fill="#6b5a00" text-anchor="middle">loop area</text>
+  <text x="240" y="190" font-family="Arial" font-size="11" fill="#6b5a00" text-anchor="middle">h_near × s_v</text>
+
+  <!-- capacitor on top -->
+  <rect x="132" y="104" width="36" height="6" fill="#c87533"/>
+  <rect x="312" y="104" width="36" height="6" fill="#c87533"/>
+  <rect x="150" y="80" width="180" height="24" rx="2" fill="#8c8c8c" stroke="#555555" stroke-width="1"/>
+  <rect x="138" y="80" width="24" height="24" fill="#bdbdbd" stroke="#555555" stroke-width="1"/>
+  <rect x="318" y="80" width="24" height="24" fill="#bdbdbd" stroke="#555555" stroke-width="1"/>
+  <text x="240" y="97" font-family="Arial" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">decap (or PAD)</text>
+
+  <!-- vias -->
+  <rect x="140" y="110" width="20" height="233" fill="#d62728"/>
+  <rect x="320" y="110" width="20" height="133" fill="#2b6cb0"/>
+
+  <!-- current arrows -->
+  <polygon points="150,200 144,186 156,186" fill="#ffffff"/>
+  <polygon points="330,140 324,154 336,154" fill="#ffffff"/>
+  <line x1="165" y1="293" x2="315" y2="293" stroke="#3c7a2e" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="330" y="290" font-family="Arial" font-size="11" fill="#2d5e22">cavity segment:</text>
+  <text x="330" y="304" font-family="Arial" font-size="11" fill="#2d5e22">in the cavity port model,</text>
+  <text x="330" y="318" font-family="Arial" font-size="11" fill="#2d5e22">not counted in the via</text>
+
+  <!-- anti-pad label -->
+  <line x1="98" y1="214" x2="124" y2="240" stroke="#333333" stroke-width="0.8"/>
+  <text x="48" y="178" font-family="Arial" font-size="12" font-weight="bold" fill="#333333">L_ap</text>
+  <text x="48" y="193" font-family="Arial" font-size="11" fill="#333333">anti-pad</text>
+  <text x="48" y="207" font-family="Arial" font-size="11" fill="#333333">segment</text>
+
+  <!-- s_v dimension -->
+  <line x1="150" y1="62" x2="330" y2="62" stroke="#333333" stroke-width="1"/>
+  <polygon points="150,62 158,58 158,66" fill="#333333"/>
+  <polygon points="330,62 322,58 322,66" fill="#333333"/>
+  <line x1="150" y1="56" x2="150" y2="78" stroke="#999999" stroke-width="0.8"/>
+  <line x1="330" y1="56" x2="330" y2="78" stroke="#999999" stroke-width="0.8"/>
+  <text x="240" y="56" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">s_v = via pitch (PWR–GND centre spacing)</text>
+
+  <!-- right brackets -->
+  <line x1="504" y1="110" x2="516" y2="110" stroke="#333333" stroke-width="1"/>
+  <line x1="504" y1="230" x2="516" y2="230" stroke="#333333" stroke-width="1"/>
+  <line x1="510" y1="110" x2="510" y2="230" stroke="#333333" stroke-width="1.5"/>
+  <text x="520" y="174" font-family="Arial" font-size="12" fill="#333333">h_near</text>
+  <line x1="504" y1="256" x2="516" y2="256" stroke="#333333" stroke-width="1"/>
+  <line x1="510" y1="230" x2="510" y2="256" stroke="#333333" stroke-width="3"/>
+  <text x="520" y="248" font-family="Arial" font-size="12" fill="#333333">t_near</text>
+  <line x1="504" y1="330" x2="516" y2="330" stroke="#333333" stroke-width="1"/>
+  <line x1="510" y1="256" x2="510" y2="330" stroke="#333333" stroke-width="1.5"/>
+  <text x="520" y="298" font-family="Arial" font-size="12" fill="#333333">d</text>
+
+  <!-- ===== top view ===== -->
+  <text x="590" y="58" font-family="Arial" font-size="13" font-weight="bold" fill="#333333">Top view at the nearer plane</text>
+  <rect x="590" y="80" width="290" height="230" fill="#c87533"/>
+  <circle cx="670" cy="180" r="45" fill="#cfe8c6"/>
+  <circle cx="670" cy="180" r="15" fill="#d62728" stroke="#7a1010" stroke-width="1"/>
+  <circle cx="800" cy="180" r="15" fill="#2b6cb0" stroke="#173d66" stroke-width="1"/>
+  <line x1="670" y1="250" x2="800" y2="250" stroke="#ffffff" stroke-width="1.2"/>
+  <polygon points="670,250 678,246 678,254" fill="#ffffff"/>
+  <polygon points="800,250 792,246 792,254" fill="#ffffff"/>
+  <line x1="670" y1="196" x2="670" y2="256" stroke="#ffffff" stroke-width="0.8"/>
+  <line x1="800" y1="196" x2="800" y2="256" stroke="#ffffff" stroke-width="0.8"/>
+  <text x="735" y="272" font-family="Arial" font-size="12" font-weight="bold" fill="#ffffff" text-anchor="middle">s_v</text>
+  <!-- leaders -->
+  <line x1="640" y1="214" x2="615" y2="330" stroke="#555555" stroke-width="0.8"/>
+  <text x="600" y="345" font-family="Arial" font-size="12" fill="#333333">anti-pad ⌀ D_antipad (clearance in the plane)</text>
+  <line x1="680" y1="191" x2="700" y2="352" stroke="#555555" stroke-width="0.8"/>
+  <text x="600" y="366" font-family="Arial" font-size="12" fill="#333333">PWR via drill ⌀ D_drill, r0 = D_drill / 2</text>
+  <text x="815" y="150" font-family="Arial" font-size="11" font-weight="bold" fill="#ffffff">GND via</text>
+  <text x="615" y="120" font-family="Arial" font-size="11" font-weight="bold" fill="#ffffff">PWR via</text>
+
+  <!-- ===== formulas ===== -->
+  <rect x="20" y="390" width="860" height="100" rx="4" fill="#f6f6f6" stroke="#bbbbbb" stroke-width="1"/>
+  <text x="35" y="413" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">L_loop = L_pair(h_near, s_v) + L_ap</text>
+  <text x="345" y="413" font-family="Arial" font-size="12" fill="#444444">long vias: L_pair ≈ (µ0·h_near/π)·ln(s_v/r0); short vias use the image partial-inductance form</text>
+  <text x="35" y="436" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">L_ap = (µ0/2π)·t_near·ln(r_ap/r0)</text>
+  <text x="345" y="436" font-family="Arial" font-size="12" fill="#444444">only the via continuing to the far plane passes the anti-pad</text>
+  <text x="35" y="459" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_viapair = R_loop(f) + jω·L_loop</text>
+  <text x="345" y="459" font-family="Arial" font-size="12" fill="#444444">R_loop: plated barrel with skin effect, length h_R = 2·h_near + t_near</text>
+  <text x="35" y="482" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_via,dec = Z_viapair / (vias per decap / 2)</text>
+  <text x="345" y="482" font-family="Arial" font-size="12" fill="#444444">Z_via,pad = Z_viapair / (PAD via count)</text>
+</svg>

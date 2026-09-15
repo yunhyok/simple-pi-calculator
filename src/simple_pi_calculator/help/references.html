@@ -1,0 +1,59 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>References</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>References</h1>
+
+<p>The physical models and formulas are based on the following public literature. The tags are used throughout
+this Help, mainly on the <a href="physics.html">Modelling concept</a> page.</p>
+
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="16%">Tag</th><th>Reference</th><th width="28%">Used for</th></tr>
+<tr><td><a name="Okoshi85"></a>[Okoshi85]</td><td>T. Okoshi, <i>Planar Circuits for Microwaves and Lightwaves</i>, Springer-Verlag, 1985.</td><td>Planar-circuit theory, modal Green's function of rectangular planes.</td></tr>
+<tr><td><a name="Lei99"></a>[Lei99]</td><td>G.-T. Lei, R. W. Techentin, B. K. Gilbert, "High-frequency characterization of power/ground-plane structures," <i>IEEE Trans. Microwave Theory Tech.</i>, vol. 47, no. 5, pp. 562–569, 1999.</td><td>Cavity port impedance double sum, lossy wavenumber.</td></tr>
+<tr><td><a name="Kim01"></a>[Kim01]</td><td>J.-H. Kim, M. Swaminathan, "Modeling of irregular shaped power distribution planes using transmission matrix method," <i>IEEE Trans. Advanced Packaging</i>, vol. 24, no. 3, pp. 334–346, 2001.</td><td>Per-square impedance/admittance of plane pairs with losses.</td></tr>
+<tr><td><a name="Swaminathan07"></a>[Swaminathan07]</td><td>M. Swaminathan, A. E. Engin, <i>Power Integrity Modeling and Design for Semiconductors and Systems</i>, Prentice Hall, 2007.</td><td>Cavity resonator model, via inductance, port reduction.</td></tr>
+<tr><td><a name="Novak07"></a>[Novak07]</td><td>I. Novak, J. R. Miller, <i>Frequency-Domain Characterization of Power Distribution Networks</i>, Artech House, 2007.</td><td>Plane-pair impedance, decoupling, measurement methods.</td></tr>
+<tr><td><a name="Novak00"></a>[Novak00]</td><td>I. Novak, "Measuring milliohms and picohenrys in power distribution networks," <i>DesignCon 2000</i>, 2000.</td><td>Two-port shunt-through measurement.</td></tr>
+<tr><td><a name="Smith99"></a>[Smith99]</td><td>L. D. Smith, R. E. Anderson, D. W. Forehand, T. J. Pelc, T. Roy, "Power distribution system design methodology and capacitor selection for modern CMOS technology," <i>IEEE Trans. Advanced Packaging</i>, vol. 22, no. 3, pp. 284–291, 1999.</td><td>Frequency-domain PDN methodology, decap RLC models.</td></tr>
+<tr><td><a name="Pozar12"></a>[Pozar12]</td><td>D. M. Pozar, <i>Microwave Engineering</i>, 4th ed., Wiley, 2012.</td><td>ABCD/S conversions for series and shunt elements.</td></tr>
+<tr><td><a name="Ramo94"></a>[Ramo94]</td><td>S. Ramo, J. R. Whinnery, T. Van Duzer, <i>Fields and Waves in Communication Electronics</i>, 3rd ed., Wiley, 1994.</td><td>Skin depth, surface impedance, coaxial inductance, layered dielectrics.</td></tr>
+<tr><td><a name="Wheeler42"></a>[Wheeler42]</td><td>H. A. Wheeler, "Formulas for the skin effect," <i>Proc. IRE</i>, vol. 30, no. 9, pp. 412–424, 1942.</td><td>Skin effect background.</td></tr>
+<tr><td><a name="Goldfarb91"></a>[Goldfarb91]</td><td>M. E. Goldfarb, R. A. Pucel, "Modeling via hole grounds in microstrip," <i>IEEE Microwave and Guided Wave Letters</i>, vol. 1, no. 6, pp. 135–137, 1991.</td><td>Optional via model "goldfarb_pucel".</td></tr>
+<tr><td><a name="Grover46"></a>[Grover46]</td><td>F. W. Grover, <i>Inductance Calculations: Working Formulas and Tables</i>, Van Nostrand, 1946 (Dover reprint).</td><td>Geometric mean distances, partial mutual inductance of parallel conductors.</td></tr>
+<tr><td><a name="Paul10"></a>[Paul10]</td><td>C. R. Paul, <i>Inductance: Loop and Partial</i>, Wiley-IEEE Press, 2010.</td><td>Loop vs partial inductance, image method, via-pair model.</td></tr>
+<tr><td><a name="Bogatin18"></a>[Bogatin18]</td><td>E. Bogatin, <i>Signal and Power Integrity – Simplified</i>, 3rd ed., Prentice Hall, 2018.</td><td>Rules of thumb for via and plane inductance, PDN concepts.</td></tr>
+<tr><td><a name="Ho75"></a>[Ho75]</td><td>C.-W. Ho, A. E. Ruehli, P. A. Brennan, "The modified nodal approach to network analysis," <i>IEEE Trans. Circuits and Systems</i>, vol. 22, no. 6, pp. 504–509, 1975.</td><td>Circuit solver for SPICE decap models.</td></tr>
+<tr><td><a name="Vlach94"></a>[Vlach94]</td><td>J. Vlach, K. Singhal, <i>Computer Methods for Circuit Analysis and Design</i>, 2nd ed., Van Nostrand Reinhold, 1994.</td><td>Inductor and mutual inductance stamps.</td></tr>
+<tr><td><a name="Nagel75"></a>[Nagel75]</td><td>L. W. Nagel, "SPICE2: A Computer Program to Simulate Semiconductor Circuits," Memorandum UCB/ERL M520, University of California, Berkeley, 1975.</td><td>Netlist conventions, scale suffixes, dot convention.</td></tr>
+<tr><td><a name="Touchstone02"></a>[Touchstone02]</td><td>EIA/IBIS Open Forum, <i>Touchstone File Format Specification, Revision 1.1</i>, 2002.</td><td>Version 1 option line and data order.</td></tr>
+<tr><td><a name="Touchstone09"></a>[Touchstone09]</td><td>IBIS Open Forum, <i>Touchstone File Format Specification, Version 2.0</i>, 2009.</td><td>Option line, 2-port data order.</td></tr>
+<tr><td><a name="QtHTML"></a>[QtHTML]</td><td>The Qt Company, "Supported HTML Subset," Qt 6 documentation.</td><td>Formatting of these Help pages.</td></tr>
+</table>
+
+<p>No code from other software was used; the references provide equations and physical reasoning only.</p>
+
+<hr>
+<p class="nav">Previous: <a href="limitations.html">Limitations</a> | Next: <a href="about.html">About and licenses</a></p>
+</body>
+</html>

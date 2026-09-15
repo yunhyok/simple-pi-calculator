@@ -1,0 +1,131 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Results and plot</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Results and plot</h1>
+
+<p>After <b>Compute ▸ Run</b> (F5) the right side of the window shows one plot tab per computed PWR net and a
+readout table. This page explains how to read and use them, how to set the sweep and how to export.</p>
+
+<h2><a name="anatomy"></a>Anatomy of the plot</h2>
+<p><img src="img/impedance_plot_annotated.png" width="760" height="490" alt="Impedance plot with numbered callouts"></p>
+<p class="caption">Figure 1 – Parts of the result view (illustrative curve).</p>
+
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="5%">#</th><th width="22%">Element</th><th>Description</th></tr>
+<tr><td>1</td><td>Plot tabs</td><td>One tab per computed PWR, named after the net. A red icon marks a PWR that failed; its messages are in the Messages dock.</td></tr>
+<tr><td>2</td><td>|Z| axis</td><td>Logarithmic impedance magnitude at the PAD, in the unit chosen under View ▸ |Z| unit.</td></tr>
+<tr><td>3</td><td>Frequency axis</td><td>Logarithmic frequency with labels 100k, 1M, 10M, 100M, 1G (Hz).</td></tr>
+<tr><td>4</td><td>Marker lines</td><td>Red dashed vertical lines at 1 MHz, 10 MHz and 100 MHz. Markers outside the sweep range are not drawn (readout "n/a").</td></tr>
+<tr><td>5</td><td>Marker readout</td><td>Dot and label with |Z| at the marker frequency, computed exactly at that frequency (4 significant digits).</td></tr>
+<tr><td>6</td><td>Hover readout</td><td>Frequency and |Z| of the curve point nearest to the mouse, in the top-left corner.</td></tr>
+<tr><td>7</td><td>Legend</td><td>"Z at PAD" (solid blue) and, if enabled, "plane only" (dashed grey).</td></tr>
+<tr><td>8</td><td>Plane-only curve</td><td>Impedance of the bare synthetic plane plus PAD vias, without any decap (see <a href="#planeonly">below</a>).</td></tr>
+<tr><td>9</td><td>Readout table</td><td>Rows = PWR nets, columns = |Z| at 1, 10, 100 MHz in the current unit.</td></tr>
+</table>
+
+<h2><a name="interaction"></a>Zoom, pan and reset</h2>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Action</th><th>Mouse / key</th></tr>
+<tr><td>Pan</td><td>Left-drag inside the plot</td></tr>
+<tr><td>Zoom both axes</td><td>Mouse wheel</td></tr>
+<tr><td>Zoom one axis</td><td>Right-drag (horizontal = frequency, vertical = |Z|), or wheel over an axis</td></tr>
+<tr><td>More options</td><td>Right-click for the context menu (view all, axis ranges, export)</td></tr>
+<tr><td>Reset to full range</td><td><b>View ▸ Reset zoom</b> or Ctrl+0</td></tr>
+</table>
+<p>The zoom state of each plot is remembered by the auto-save and restored with the next start.</p>
+
+<h2><a name="units"></a>Switching the |Z| unit</h2>
+<p><b>View ▸ |Z| unit</b> selects Ω, mΩ (default) or µΩ. The axis label, marker labels, hover readout and readout
+table change together, and the current zoom is kept (the vertical range is rescaled). The unit is saved with
+the project. Exported files always contain values in Ω.</p>
+
+<h2><a name="planeonly"></a>Plane-only curve</h2>
+<p>Tick <b>View ▸ Show plane-only curve</b> (or the check box in the Sweep tab) and compute again. The dashed curve
+shows the plane pair alone as seen through the PAD vias. It helps to see where the plane capacitance takes over
+from the decaps and where plane resonances appear. Because the plane is synthetic (W × 1.4·D_ref), treat its
+exact level and resonance frequencies as indicative.</p>
+
+<h2><a name="reading"></a>Interpreting the curve</h2>
+<ul>
+<li><b>Falling line at the left</b> (−20 dB/decade): capacitive region, |Z| ≈ 1/(2πf·C_total). It keeps rising
+towards low frequency because no voltage regulator is modelled – this is expected.</li>
+<li><b>Dips</b>: series resonances of the decaps with their loop inductance; the depth is set by the ESR in parallel.</li>
+<li><b>Rising line</b> (+20 dB/decade): inductive region; compare the level between two variants to see the effect
+of vias, distance and count. The inductance can be read as L ≈ |Z| / (2πf).</li>
+<li><b>Peaks</b>: anti-resonances between capacitor groups, or plane resonances near the top of the range.</li>
+<li><b>"(inputs changed)"</b> in the plot title: the inputs were edited after this result was computed; press F5.</li>
+</ul>
+<p>More background: <a href="physics.html#shape">What shapes the curve</a>.</p>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="tip"><b>Target impedance.</b> The tool does not draw a target line. A common first estimate is
+Z_target = (supply voltage × allowed ripple) / transient current, e.g. 1.0 V × 3 % / 5 A = 6 mΩ. Compare it with
+the marker readouts and the curve between the lowest and highest frequency of interest.</td></tr>
+</table>
+
+<h2><a name="sweep"></a>Sweep settings</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Field</th><th width="14%">Default</th><th>Rules</th></tr>
+<tr><td>f start</td><td>100k</td><td>≥ 1 kHz and below f stop.</td></tr>
+<tr><td>f stop</td><td>1G</td><td>≤ 20 GHz; above 3 GHz you get <code>W_SWEEP_HIGH</code> (model accuracy).</td></tr>
+<tr><td>Points</td><td>400</td><td>10 … 5000, logarithmically spaced. More points only make the curve smoother; marker values are always exact.</td></tr>
+<tr><td>Show plane-only curve</td><td>off</td><td>Also compute the plane-only curve.</td></tr>
+</table>
+<p>Frequency fields accept engineering notation: <code>100k</code> or <code>100K</code> = 1e5, <code>2.5M</code>,
+<code>2.5meg</code>, <code>2.5MEG</code> or <code>2.5MHz</code> = 2.5e6, <code>1G</code> or <code>1GHz</code> = 1e9, plain numbers
+such as <code>1e8</code>. A lower-case <code>m</code> is rejected on purpose, to avoid confusing milli and mega.
+Invalid ranges give <code>E_SWEEP_RANGE</code>.</p>
+
+<h2><a name="messages"></a>Messages dock</h2>
+<p>All issues of the last validation or computation are listed with severity icon, code, message, source (file or
+<code>PWR:name</code>) and location (sheet cell, file line or table row). Double-click a message to jump to the tab
+and row concerned. Hide or show the dock with <b>View ▸ Show Messages dock</b>. See
+<a href="troubleshooting.html">Troubleshooting</a> for every code.</p>
+
+<h2><a name="export"></a>Export</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Menu</th><th>Output</th></tr>
+<tr><td>File ▸ Export ▸ Results CSV…</td><td>One file per PWR, named <code>&lt;project&gt;_&lt;PWR&gt;.csv</code>, in the chosen folder. Columns
+<code>Frequency (Hz)</code>, <code>Re Z (Ohm)</code>, <code>Im Z (Ohm)</code>, <code>|Z| (Ohm)</code> and, if enabled,
+<code>|Z| plane only (Ohm)</code>. A header block lists an input summary and the marker readouts.</td></tr>
+<tr><td>File ▸ Export ▸ Results XLSX…</td><td>One workbook with a <code>Summary</code> sheet (inputs and marker readouts) and one sheet per PWR with
+the same columns (sheet names are shortened to 31 characters; characters <code>[]:*?/\</code> are replaced by <code>_</code>).</td></tr>
+<tr><td>File ▸ Export ▸ Plot PNG…</td><td>Image of the visible plot (1600 px wide) with the current zoom, unit and markers.</td></tr>
+</table>
+<p>Numbers are written with 10 significant digits in Ω, so exported data can be post-processed or overlaid with
+measurements in other tools. Complex values allow you to recombine results (e.g. add a VRM model externally).</p>
+
+<h2><a name="rmessages"></a>Related message codes</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Code</th><th>Meaning</th><th width="34%">What to do</th></tr>
+<tr><td><code>E_SWEEP_RANGE</code></td><td>f start below 1 kHz, f start ≥ f stop, f stop above 20 GHz, or points outside 10 … 5000.</td><td>Correct the Sweep tab.</td></tr>
+<tr><td><code>W_SWEEP_HIGH</code></td><td>f stop above 3 GHz.</td><td>Results above a few GHz are only indicative.</td></tr>
+<tr><td><code>W_MODES_CAPPED</code></td><td>The number of cavity modes hit the limit; spreading inductance may be slightly under-resolved.</td><td>Happens for very large planes with very small drills; results remain usable.</td></tr>
+<tr><td><code>E_SINGULAR</code></td><td>The port reduction could not be solved at some frequency.</td><td>Look for <code>W_PORT_OVERLAP</code> or zero-length vias with ideal shorts in models.</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="physics.html">Modelling concept</a> | Next: <a href="project_file.html">Projects and auto-save</a></p>
+</body>
+</html>

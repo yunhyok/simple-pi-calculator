@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny" width="900" height="400" viewBox="0 0 900 400">
+  <title>PDN chain modelled by Simple PI Calculator</title>
+  <rect x="0" y="0" width="900" height="400" fill="#ffffff"/>
+  <text x="450" y="28" font-family="Arial" font-size="18" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Modelled PDN chain (one PWR net)</text>
+
+  <!-- ===== decap branch 1 ===== -->
+  <rect x="20" y="75" width="150" height="50" rx="6" fill="#e8f1fb" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="95" y="96" font-family="Arial" font-size="13" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Decap model</text>
+  <text x="95" y="114" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_cap (.mod / .s2p)</text>
+  <line x1="170" y1="100" x2="192" y2="100" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="200,100 190,95 190,105" fill="#444444"/>
+  <rect x="200" y="75" width="150" height="50" rx="6" fill="#fdf0e6" stroke="#c87533" stroke-width="1.5"/>
+  <text x="275" y="96" font-family="Arial" font-size="13" font-weight="bold" fill="#8a4a16" text-anchor="middle">Decap via set</text>
+  <text x="275" y="114" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_via,dec = R + jωL</text>
+  <line x1="350" y1="100" x2="382" y2="100" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="390,100 380,95 380,105" fill="#444444"/>
+
+  <!-- ===== decap branch 2 ===== -->
+  <rect x="20" y="145" width="150" height="50" rx="6" fill="#e8f1fb" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="95" y="166" font-family="Arial" font-size="13" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Decap model</text>
+  <text x="95" y="184" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_cap / 2 (Dummy Cap)</text>
+  <line x1="170" y1="170" x2="192" y2="170" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="200,170 190,165 190,175" fill="#444444"/>
+  <rect x="200" y="145" width="150" height="50" rx="6" fill="#fdf0e6" stroke="#c87533" stroke-width="1.5"/>
+  <text x="275" y="166" font-family="Arial" font-size="13" font-weight="bold" fill="#8a4a16" text-anchor="middle">Decap via set</text>
+  <text x="275" y="184" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_via,dec</text>
+  <line x1="350" y1="170" x2="382" y2="170" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="390,170 380,165 380,175" fill="#444444"/>
+
+  <text x="95" y="228" font-family="Arial" font-size="20" fill="#666666" text-anchor="middle">⋮</text>
+  <text x="275" y="228" font-family="Arial" font-size="20" fill="#666666" text-anchor="middle">⋮</text>
+
+  <!-- ===== decap branch K ===== -->
+  <rect x="20" y="245" width="150" height="50" rx="6" fill="#e8f1fb" stroke="#2b6cb0" stroke-width="1.5"/>
+  <text x="95" y="266" font-family="Arial" font-size="13" font-weight="bold" fill="#1a3d6d" text-anchor="middle">Decap model</text>
+  <text x="95" y="284" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_cap</text>
+  <line x1="170" y1="270" x2="192" y2="270" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="200,270 190,265 190,275" fill="#444444"/>
+  <rect x="200" y="245" width="150" height="50" rx="6" fill="#fdf0e6" stroke="#c87533" stroke-width="1.5"/>
+  <text x="275" y="266" font-family="Arial" font-size="13" font-weight="bold" fill="#8a4a16" text-anchor="middle">Decap via set</text>
+  <text x="275" y="284" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_via,dec</text>
+  <line x1="350" y1="270" x2="382" y2="270" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="390,270 380,265 380,275" fill="#444444"/>
+
+  <!-- ===== cavity ===== -->
+  <rect x="390" y="60" width="210" height="250" rx="4" fill="#e6f4e1" stroke="#3c7a2e" stroke-width="2"/>
+  <rect x="390" y="60" width="210" height="10" fill="#c87533"/>
+  <rect x="390" y="300" width="210" height="10" fill="#c87533"/>
+  <text x="495" y="130" font-family="Arial" font-size="14" font-weight="bold" fill="#2d5e22" text-anchor="middle">PWR / GND plane pair</text>
+  <text x="495" y="150" font-family="Arial" font-size="13" fill="#2d5e22" text-anchor="middle">(cavity resonator)</text>
+  <text x="495" y="185" font-family="Arial" font-size="13" fill="#333333" text-anchor="middle">Z_cav : P × P port matrix</text>
+  <text x="495" y="205" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">P = 1 PAD port + K decap ports</text>
+  <text x="495" y="245" font-family="Arial" font-size="12" fill="#555555" text-anchor="middle">plane W × H, gap d, εr_eff, tanδ_eff</text>
+  <rect x="391" y="94" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="391" y="164" width="12" height="12" fill="#2b6cb0"/>
+  <rect x="391" y="264" width="12" height="12" fill="#2b6cb0"/>
+  <text x="408" y="92" font-family="Arial" font-size="11" fill="#2b6cb0">port 1</text>
+  <text x="408" y="162" font-family="Arial" font-size="11" fill="#2b6cb0">port 2</text>
+  <text x="408" y="262" font-family="Arial" font-size="11" fill="#2b6cb0">port K</text>
+  <rect x="587" y="174" width="12" height="12" fill="#d62728"/>
+  <text x="583" y="170" font-family="Arial" font-size="11" fill="#d62728" text-anchor="end">port 0</text>
+
+  <!-- ===== PAD side ===== -->
+  <line x1="600" y1="180" x2="617" y2="180" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="625,180 615,175 615,185" fill="#444444"/>
+  <rect x="625" y="155" width="140" height="50" rx="6" fill="#fdf0e6" stroke="#c87533" stroke-width="1.5"/>
+  <text x="695" y="176" font-family="Arial" font-size="13" font-weight="bold" fill="#8a4a16" text-anchor="middle">PAD via set</text>
+  <text x="695" y="194" font-family="Arial" font-size="12" fill="#333333" text-anchor="middle">Z_via,pad</text>
+  <line x1="765" y1="180" x2="787" y2="180" stroke="#444444" stroke-width="1.5"/>
+  <polygon points="795,180 785,175 785,185" fill="#444444"/>
+  <rect x="795" y="150" width="90" height="60" rx="6" fill="#fbe3e3" stroke="#d62728" stroke-width="2"/>
+  <text x="840" y="176" font-family="Arial" font-size="15" font-weight="bold" fill="#a31b1b" text-anchor="middle">PAD</text>
+  <text x="840" y="196" font-family="Arial" font-size="12" fill="#a31b1b" text-anchor="middle">Z_PAD(f)</text>
+  <text x="840" y="232" font-family="Arial" font-size="11" fill="#666666" text-anchor="middle">observation</text>
+  <text x="840" y="246" font-family="Arial" font-size="11" fill="#666666" text-anchor="middle">port (IC)</text>
+
+  <!-- ===== equations ===== -->
+  <rect x="20" y="330" width="865" height="58" rx="4" fill="#f6f6f6" stroke="#bbbbbb" stroke-width="1"/>
+  <text x="35" y="353" font-family="Arial" font-size="13" fill="#222222">Load of decap port p:   Z_L,p = Z_cap / c_p + Z_via,dec        (c_p = capacitors on the port: 1, or 2 for Dummy Cap rows)</text>
+  <text x="35" y="377" font-family="Arial" font-size="13" fill="#222222">Impedance at the PAD:  Z_PAD = z_00 − z_0K (Z_KK + diag Z_L)⁻¹ z_K0 + Z_via,pad        (decap ports eliminated)</text>
+</svg>

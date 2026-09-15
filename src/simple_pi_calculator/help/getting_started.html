@@ -1,0 +1,154 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Getting Started</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Getting Started</h1>
+
+<p>This page walks you through the main window and a complete computation, first with the bundled
+example project and then for your own board.</p>
+
+<h2><a name="window"></a>The main window</h2>
+
+<p><img src="img/gui_overview.png" width="760" height="625" alt="Main window overview with numbered callouts"></p>
+<p class="caption">Figure 1 – Main window (schematic). Inputs on the left, results on the right, messages at the bottom.</p>
+
+<p>The window is split into an <b>input side</b> (left) with five tabs that you normally fill from left to
+right, and a <b>result side</b> (right) with one plot tab per computed PWR net and a readout table. The
+<b>Messages</b> dock at the bottom lists all errors, warnings and information with a code; double-click a
+message to jump to the input that caused it. The splitter between both sides can be dragged; the layout is
+remembered.</p>
+
+<h2><a name="example"></a>Tour with the example project</h2>
+
+<h3>Step 1 – Open the example</h3>
+<p>Choose <b>File ▸ Open Example Project</b>. The example contains an 11-layer stack-up, two PWR nets
+(<code>VDD_CORE</code> and <code>VDD_IO</code>) and four decap rows using the bundled models
+<code>cap_0402_100nF.mod</code> and <code>cap_0603_10uF.mod</code>. <b>Help ▸ Open Examples Folder</b>
+shows the Excel and model files, which are good templates for your own files.</p>
+
+<h3>Step 2 – Stack-up tab</h3>
+<p>The table lists every layer with its number, name, type (<i>Metal</i> or <i>Dielectric</i>),
+thickness, conductivity, Dk, Df and the depth of its top face (<code>z_top</code>). Below the table the
+cross-section preview highlights the PWR/GND pair of the PWR row selected in the <b>PWR Nets</b> tab.
+Use <b>Import…</b> to load another Excel file and <b>Re-import</b> after you edited the file in Excel.
+The file format is described in <a href="input_stackup.html">Stack-up Excel file</a>.</p>
+
+<h3>Step 3 – Vias tab</h3>
+<p>Here you set the via geometry that is common to all PWR nets: drill diameter (0.2 mm), anti-pad
+diameter (0.5 mm), <b>via pitch</b> (distance between the PWR via and its GND return via, 1.0 mm),
+<b>vias per decap</b> (2 = one PWR via + one GND via) and <b>PAD via count</b> (number of PWR/GND via
+pairs at the IC, 1). The read-only labels show the derived via length to the nearer plane, the loop
+inductance and the port widths for the selected PWR. See <a href="input_vias.html">Via settings</a>.</p>
+
+<h3>Step 4 – PWR Nets tab</h3>
+<p>Each row is one power net: name, PWR layer, GND layer and the plane width W. The grey columns are
+derived: D_ref (largest decap distance), plane height H = 1.4 × D_ref, number of ports, dielectric
+thickness d, effective εr and plane capacitance. The <b>placement preview</b> below the table draws the
+synthetic plane of the selected row: the PAD is the red square, decap via sets are blue squares (a double
+outline means two capacitors share the via set). Untick <b>Enabled</b> to skip a PWR. See
+<a href="input_pwr.html">PWR list</a>.</p>
+
+<h3>Step 5 – Decaps tab</h3>
+<p>Each row is a group of identical capacitors assigned to one PWR: model file, count, <b>Distance to
+PAD</b> and the <b>Dummy Cap</b> check box. The filter box at the top shows the rows of one PWR (it follows
+the selection in the PWR Nets tab). The derived columns show the number of via sets, the capacitance at
+100 kHz and the self-resonance frequency (SRF) of the model. Select a row and press <b>Preview model</b>
+to plot the capacitor impedance alone. See <a href="input_decaps.html">Decap list</a>,
+<a href="spice_models.html">SPICE models</a> and <a href="touchstone.html">Touchstone models</a>.</p>
+
+<h3>Step 6 – Sweep tab</h3>
+<p>Default sweep: 100 kHz to 1 GHz, 400 logarithmic points. Frequencies accept engineering suffixes such
+as <code>100k</code>, <code>2.5MHz</code>, <code>1G</code>. Tick <b>Show plane-only curve</b> to also plot
+the bare plane without decaps. See <a href="results.html#sweep">Sweep settings</a>.</p>
+
+<h3>Step 7 – Compute</h3>
+<p>Press <b>F5</b> or choose <b>Compute ▸ Run</b>. The inputs are validated first; if there are errors,
+they are listed in the Messages dock and nothing is computed. During the computation the status bar shows a
+progress bar; press <b>Esc</b> (Compute ▸ Cancel) to stop. A PWR that fails (e.g. missing model file) gets
+a red tab icon, the other PWRs are still computed.</p>
+
+<h3>Step 8 – Read the results</h3>
+<p>Each plot shows |Z| at the PAD versus frequency on log-log axes, with red dashed marker lines at 1, 10
+and 100 MHz and the exact |Z| value next to each marker. The readout table lists the same values for all
+PWRs. For the example you should see approximately:</p>
+
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>PWR</th><th>|Z| @ 100 kHz</th><th>|Z| @ 1 MHz</th><th>|Z| @ 10 MHz</th><th>|Z| @ 100 MHz</th></tr>
+<tr><td>VDD_CORE</td><td>≈ 39 mΩ</td><td>≈ 3.3 mΩ</td><td>≈ 35 mΩ</td><td>≈ 140 mΩ</td></tr>
+<tr><td>VDD_IO</td><td>≈ 152 mΩ</td><td>≈ 12 mΩ</td><td>≈ 63 mΩ</td><td>≈ 880 mΩ</td></tr>
+</table>
+<p>VDD_IO is much higher above a few MHz mainly because its planes (layers 7/9) are 1.1 mm below the Top
+surface, so each via loop is about 16 times more inductive than for VDD_CORE (layers 5/3). Details on
+reading the plot: <a href="results.html">Results and plot</a>.</p>
+
+<h3>Step 9 – Export and save</h3>
+<p><b>File ▸ Export</b> writes the curves as CSV or XLSX and the current plot as PNG. Your work is
+auto-saved continuously; use <b>File ▸ Save As…</b> when you want a named <code>.spical.json</code> project
+file to share or archive. See <a href="project_file.html">Projects and auto-save</a>.</p>
+
+<h2><a name="own"></a>Your own board, step by step</h2>
+<ol>
+<li><b>File ▸ New</b> (you are asked whether to save the current state if it is modified).</li>
+<li>Prepare the stack-up Excel file: one row per layer, top layer first, columns Layer Number, Thickness,
+Conductivity, Dk, Df (Layer Name optional). Conductivity is filled only for copper layers.
+Import it in the <b>Stack-up</b> tab and check the Type column.</li>
+<li>Set the <b>Vias</b> tab to your technology (drill, anti-pad, typical distance between a PWR via and the
+nearest GND via). For HDI microvias use the microvia drill.</li>
+<li>In <b>PWR Nets</b>, add one row per rail. Choose as GND layer the ground plane that is directly
+adjacent to the PWR plane (normally the one with the thinnest dielectric in between). Width = the width of
+the plane region across which your decaps are spread.</li>
+<li>In <b>Decaps</b>, add one row per capacitor group: PWR name, model file, number of capacitors and their
+distance from the IC along the plane. Use the <b>Dummy Cap</b> flag when two capacitors share one via
+set.</li>
+<li>Press <b>F5</b>. Fix any messages (see <a href="troubleshooting.html">Troubleshooting</a>).</li>
+<li>Compare variants: change counts, distances, via pitch or PAD via count and press F5 again. The plot
+title shows "(inputs changed)" while the displayed result is out of date.</li>
+</ol>
+
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="tip"><b>Tips for what-if studies.</b>
+<ul>
+<li>Untick <b>Enabled</b> on a decap row instead of deleting it: the row is ignored for the plane height and
+the computation but stays in the project.</li>
+<li>Use <b>Duplicate</b> in the PWR Nets tab to compare two GND references for the same rail.</li>
+<li>Set a realistic <b>mounting inductance</b> (Vias tab ▸ Advanced, typically 0.2–0.6 nH per capacitor);
+the default 0 nH is optimistic.</li>
+<li>Keep the stack-up in Excel and use <b>Re-import</b> after edits.</li>
+</ul></td></tr>
+</table>
+
+<h2><a name="keys"></a>Keyboard shortcuts</h2>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Key</th><th>Action</th></tr>
+<tr><td>F5</td><td>Compute ▸ Run</td></tr>
+<tr><td>Esc</td><td>Cancel a running computation</td></tr>
+<tr><td>Ctrl+N / Ctrl+O</td><td>New project / Open project</td></tr>
+<tr><td>Ctrl+S / Ctrl+Shift+S</td><td>Save / Save As</td></tr>
+<tr><td>Ctrl+0</td><td>Reset zoom of the plot</td></tr>
+<tr><td>F1</td><td>Help contents</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="index.html">Home</a> | Next: <a href="input_stackup.html">Stack-up Excel file</a></p>
+</body>
+</html>

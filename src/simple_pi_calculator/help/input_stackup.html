@@ -1,0 +1,163 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Input: Stack-up Excel file</title>
+<style>
+body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10pt; color: #202020; background-color: #ffffff; }
+h1 { font-size: 18pt; color: #1a3d6d; margin-top: 4px; margin-bottom: 8px; }
+h2 { font-size: 14pt; color: #1a3d6d; margin-top: 18px; margin-bottom: 6px; }
+h3 { font-size: 11pt; color: #2b2b2b; margin-top: 12px; margin-bottom: 4px; }
+p { margin-top: 4px; margin-bottom: 6px; }
+code { font-family: Consolas, "Courier New", monospace; color: #7a2e00; }
+pre { font-family: Consolas, "Courier New", monospace; font-size: 9pt; background-color: #f4f4f4; margin-left: 12px; }
+th { background-color: #e3ebf5; text-align: left; }
+.nav { font-size: 9pt; color: #555555; }
+.caption { font-size: 9pt; color: #555555; font-style: italic; }
+.note { background-color: #fff8dc; }
+.tip { background-color: #eaf5ea; }
+.warn { background-color: #fdecea; }
+</style>
+</head>
+<body>
+<p class="nav"><a href="index.html">Home</a> · <a href="getting_started.html">Getting Started</a> · <a href="input_stackup.html">Inputs</a> · <a href="physics.html">Physics</a> · <a href="references.html">References</a></p>
+<hr>
+
+<h1>Input: Stack-up Excel file</h1>
+
+<p>The stack-up describes every layer of the board or substrate from top to bottom: copper layers
+(metal) and the dielectrics between them. It is imported from an <code>.xlsx</code> file in the
+<b>Stack-up</b> tab (<b>Import…</b>) or with <b>File ▸ Import ▸ Stack-up…</b>. The imported table is stored
+inside the project, so the project still opens if the Excel file is moved; <b>Re-import</b> reads the file
+again after you changed it.</p>
+
+<p>Other inputs page: <a href="input_vias.html">Vias</a> · <a href="input_pwr.html">PWR list</a> ·
+<a href="input_decaps.html">Decap list</a></p>
+
+<h2><a name="example"></a>Example</h2>
+<p>Bundled file <code>examples/stackup_6L.xlsx</code>, sheet <code>Stackup</code>, header in row 1:</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Layer Number</th><th>Layer Name</th><th>Thickness(mm)</th><th>Conductivity(S/m)</th><th>Dk</th><th>Df</th></tr>
+<tr><td>1</td><td>TOP</td><td>0.035</td><td>5.8E7</td><td>4.2</td><td>0.02</td></tr>
+<tr><td>2</td><td>PP1</td><td>0.1</td><td></td><td>4.2</td><td>0.02</td></tr>
+<tr><td>3</td><td>GND1</td><td>0.035</td><td>5.8E7</td><td>4.3</td><td>0.018</td></tr>
+<tr><td>4</td><td>CORE1</td><td>0.1</td><td></td><td>4.3</td><td>0.018</td></tr>
+<tr><td>5</td><td>PWR1</td><td>0.035</td><td>5.8E7</td><td>4.3</td><td>0.018</td></tr>
+<tr><td>6</td><td>PP2</td><td>0.8</td><td></td><td>4.4</td><td>0.02</td></tr>
+<tr><td>7</td><td>PWR2</td><td>0.035</td><td>5.8E7</td><td>4.3</td><td>0.018</td></tr>
+<tr><td>8</td><td>CORE2</td><td>0.1</td><td></td><td>4.3</td><td>0.018</td></tr>
+<tr><td>9</td><td>GND2</td><td>0.035</td><td>5.8E7</td><td>4.2</td><td>0.02</td></tr>
+<tr><td>10</td><td>PP3</td><td>0.1</td><td></td><td>4.2</td><td>0.02</td></tr>
+<tr><td>11</td><td>BOTTOM</td><td>0.035</td><td>5.8E7</td><td>4.2</td><td>0.02</td></tr>
+</table>
+
+<p><img src="img/stackup_cross_section.png" width="760" height="397" alt="Stack-up cross-section with PWR and GND planes, vias, decap and PAD"></p>
+<p class="caption">Figure 1 – The example stack-up as a cross-section, with the VDD_CORE plane pair (PWR layer 5, GND layer 3).
+Metal rows are copper coloured, dielectric rows green.</p>
+
+<h2><a name="columns"></a>Columns</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th>Field</th><th>Required</th><th>Accepted headers (examples)</th><th>Content</th></tr>
+<tr><td>Layer name</td><td>no</td><td><code>Layer Name</code>, <code>layer_name</code></td><td>Free text, shown in tables and messages.</td></tr>
+<tr><td>Layer number</td><td>yes</td><td><code>Layer Number</code>, <code>Layer No.</code>, <code>LAYER #</code>, <code>layer_number</code>, <code>Layer Index</code>, <code>Layer</code>, <code>No</code>, <code>#</code></td><td>Integer ≥ 1, unique. 1 = top layer. Rows are sorted by this number.</td></tr>
+<tr><td>Thickness</td><td>yes</td><td><code>Thickness (mm)</code>, <code>thickness[um]</code>, <code>Thk(mil)</code>, <code>t</code>, <code>th</code></td><td>Number &gt; 0. Unit from the header (default mm), see <a href="#units">Units</a>.</td></tr>
+<tr><td>Conductivity</td><td>yes (column must exist; cells may be empty)</td><td><code>Conductivity (S/m)</code>, <code>Sigma</code>, any header with unit <code>(S/m)</code></td><td>S/m. Filled for metal layers only (copper 5.8E7). Empty, 0, <code>-</code> or <code>n/a</code> for dielectrics.</td></tr>
+<tr><td>Dk</td><td>yes</td><td><code>Dk</code>, <code>DK</code>, <code>Er</code>, <code>εr</code>, <code>epsr</code>, <code>eps</code>, <code>Permittivity</code>, <code>Dielectric Constant</code></td><td>Relative permittivity ≥ 1 for dielectric rows. Ignored for metal rows.</td></tr>
+<tr><td>Df</td><td>yes</td><td><code>Df</code>, <code>tan δ</code>, <code>tand</code>, <code>Loss Tangent</code>, <code>Dissipation Factor</code></td><td>Loss tangent as a plain number between 0 and 1 (e.g. 0.02, <b>not</b> 2 %). Ignored for metal rows.</td></tr>
+</table>
+<p>The column order does not matter and additional columns (e.g. "Material", "Copper weight") are ignored.</p>
+
+<h2><a name="headers"></a>How headers are recognised</h2>
+<p>Header texts are matched tolerantly, so files from different CAM tools usually import without editing:</p>
+<ol>
+<li><b>Sheet:</b> the first sheet whose name contains <code>stack</code>; otherwise the sheet that was active when the file was saved.</li>
+<li><b>Header row:</b> rows 1 to 20 are scanned; the header row is the first row in which all required
+columns are found. Title rows above the header are therefore allowed.</li>
+<li><b>Normalisation:</b> each header cell is converted to lower case; <code>µ</code>/<code>μ</code> becomes
+<code>u</code>, <code>δ</code> becomes <code>d</code>, <code>ε</code> becomes <code>e</code>; spaces, underscores, dots and other
+punctuation are removed; text in <code>( )</code> or <code>[ ]</code> is taken as the <b>unit</b>. Example:
+<code>Thickness (mm)</code> → name <code>thickness</code>, unit <code>mm</code>; <code>tan δ</code> → <code>tand</code>;
+<code>Layer No.</code> → <code>layerno</code>.</li>
+<li><b>Matching order:</b> Layer name is tested first (so that "Layer Name" is not taken as the layer
+number), then Layer number, Thickness, Conductivity, Dk, Df. Each header cell is used for one field only.
+If two cells match the same field, the second one is ignored with <code>W_XL_DUP_COLUMN</code>.</li>
+<li><b>Data rows:</b> all rows below the header; completely empty rows are skipped; reading stops at the
+first row where all required cells are empty.</li>
+</ol>
+
+<h2><a name="units"></a>Units and numbers</h2>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>Header unit</th><th>Meaning</th><th>Example</th></tr>
+<tr><td>none or <code>(mm)</code></td><td>millimetre</td><td><code>0.035</code></td></tr>
+<tr><td><code>(um)</code>, <code>(µm)</code></td><td>micrometre</td><td><code>35</code> → 0.035 mm</td></tr>
+<tr><td><code>(mil)</code></td><td>1/1000 inch = 0.0254 mm</td><td><code>1.378</code> → 0.035 mm</td></tr>
+<tr><td><code>(in)</code>, <code>(inch)</code></td><td>25.4 mm</td><td></td></tr>
+<tr><td><code>(m)</code></td><td>metre</td><td><code>35e-6</code></td></tr>
+</table>
+<p>Numeric cells may be real numbers or text such as <code>"5.8E7"</code> or <code>"0,035"</code> (a comma is
+read as decimal point). Formula cells are accepted if Excel stored their calculated value; files produced by
+scripts without a cached value give <code>E_XL_FORMULA_NO_VALUE</code> – open and save the file once in Excel.</p>
+
+<h2><a name="metal"></a>Metal or dielectric?</h2>
+<p>The <b>Conductivity</b> cell alone decides the layer type:</p>
+<ul>
+<li>a number greater than 0 → <b>Metal</b> (a plane or signal layer; Dk/Df in the same row are ignored);</li>
+<li>empty, 0, <code>-</code> or <code>n/a</code> → <b>Dielectric</b> (Dk is required, Df recommended).</li>
+</ul>
+<p>Check the <b>Type</b> column after import. A dielectric row with a conductivity value by mistake becomes a
+metal layer, and the PWR/GND pair around it will be reported as having a metal layer in between.</p>
+
+<h2><a name="pair"></a>What is derived from the stack-up</h2>
+<p>For each PWR net the layers strictly between the PWR layer and its GND layer form the cavity dielectric:</p>
+<pre>
+d        = sum of the thicknesses of all layers between PWR and GND
+εr_eff   = series combination of the dielectric layers (layers stacked in the field direction)
+tanδ_eff = matching effective loss tangent
+</pre>
+<p>Example: 0.05 mm with εr 4.0 / tanδ 0.020 plus 0.05 mm with εr 3.5 / tanδ 0.010 → d = 0.1 mm,
+εr_eff = 3.733, tanδ_eff = 0.0147. With a single dielectric (example: VDD_CORE, layer 4) the values are
+simply d = 0.1 mm, εr = 4.3, tanδ = 0.018.</p>
+<p>The via length uses the depth of the <b>nearer plane</b> below the Top surface (<code>z_top</code> column),
+see <a href="input_vias.html#length">Via length</a>. The conductivity and thickness of the PWR and GND
+layers determine the conductor loss of the planes (skin effect).</p>
+
+<h2><a name="messages"></a>Messages</h2>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="28%">Code</th><th>Meaning</th><th width="32%">What to do</th></tr>
+<tr><td><code>E_XL_HEADER_NOT_FOUND</code></td><td>No row in the first 20 rows contains all required columns. The message lists the missing columns and the best candidate row.</td><td>Rename the header cells (see <a href="#columns">Columns</a>) or add the missing Conductivity/Dk/Df column.</td></tr>
+<tr><td><code>E_XL_NUMBER</code></td><td>A cell that must be numeric contains text that is not a number (cell reference given).</td><td>Correct the cell, e.g. remove units typed into the cell (<code>35um</code>).</td></tr>
+<tr><td><code>E_XL_UNIT</code></td><td>Unknown unit in a header, e.g. <code>Thickness (oz)</code>.</td><td>Use mm, um, mil, in or m.</td></tr>
+<tr><td><code>E_XL_FORMULA_NO_VALUE</code></td><td>Formula cell without a stored value.</td><td>Open and save the file in Excel.</td></tr>
+<tr><td><code>W_XL_DUP_COLUMN</code></td><td>Two columns match the same field; the second is ignored.</td><td>Rename or delete one column.</td></tr>
+<tr><td><code>E_STACK_EMPTY</code></td><td>No data rows below the header.</td><td>Check the sheet and header row.</td></tr>
+<tr><td><code>E_STACK_LAYER_NUM</code></td><td>Layer number missing, not an integer, or smaller than 1.</td><td>Number the layers 1, 2, 3, … from the top.</td></tr>
+<tr><td><code>E_STACK_LAYER_DUP</code></td><td>The same layer number appears twice.</td><td>Make the numbers unique.</td></tr>
+<tr><td><code>W_STACK_LAYER_GAP</code></td><td>Numbers are not contiguous (e.g. 1, 2, 4). Rows are sorted and the numbers are kept.</td><td>Usually a typo; PWR/GND references use these numbers.</td></tr>
+<tr><td><code>E_STACK_THICKNESS</code></td><td>Thickness missing, zero or negative.</td><td>Enter the thickness.</td></tr>
+<tr><td><code>E_STACK_DK</code></td><td>Dielectric row without Dk, or Dk &lt; 1.</td><td>Enter Dk (typically 3–4.5 for FR-4/ABF).</td></tr>
+<tr><td><code>W_STACK_DF_MISSING</code></td><td>Dielectric row without Df; 0 (lossless) is used.</td><td>Enter Df; losses damp the plane resonances.</td></tr>
+<tr><td><code>E_STACK_DF</code></td><td>Df below 0 or above 1.</td><td>Enter Df as a fraction (0.02), not in percent.</td></tr>
+<tr><td><code>W_STACK_SIGMA_RANGE</code></td><td>Metal conductivity outside 1e5 … 1e8 S/m.</td><td>Check the exponent (copper 5.8E7).</td></tr>
+<tr><td><code>W_STACK_METAL_DKDF</code> (info)</td><td>Dk/Df given on a metal row; they are ignored.</td><td>Nothing, or clear the cells.</td></tr>
+<tr><td><code>W_STACK_ADJ_METAL</code> (info)</td><td>Two metal rows are adjacent without dielectric between them.</td><td>Allowed; check that this is intended.</td></tr>
+<tr><td><code>W_STACK_METAL_BETWEEN</code></td><td>A metal layer lies between the PWR and GND layers of a PWR net. It is assumed to be cleared (filled with dielectric) in the plane area; its thickness is included in d.</td><td>Choose the adjacent GND plane as reference if possible.</td></tr>
+<tr><td><code>E_STACK_NO_DIELECTRIC</code></td><td>There is no dielectric layer between the PWR and GND layer of a PWR net.</td><td>Check the layer numbers in the PWR list.</td></tr>
+</table>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="warn">
+<ul>
+<li><b>Thickness in µm without unit:</b> <code>35</code> in a column called <code>Thickness</code> is read as 35 mm.
+Write <code>Thickness (um)</code> in the header.</li>
+<li><b>Df in percent:</b> <code>2</code> instead of <code>0.02</code> gives <code>E_STACK_DF</code>.</li>
+<li><b>Solder mask or plating rows with a conductivity:</b> they become metal layers. Leave conductivity empty for non-copper rows, or remove them (they do not affect the plane pair anyway).</li>
+<li><b>Bottom-up numbering:</b> layer 1 must be the Top side, where decaps and the PAD are mounted.</li>
+<li><b>Merged header cells</b> across two rows: put each header in one cell of one row.</li>
+</ul>
+</td></tr>
+</table>
+
+<hr>
+<p class="nav">Previous: <a href="getting_started.html">Getting Started</a> | Next: <a href="input_vias.html">Via settings</a></p>
+</body>
+</html>
