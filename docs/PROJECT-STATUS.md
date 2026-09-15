@@ -1,4 +1,4 @@
-# Simple PI Calculator — 프로젝트 현황 (2026-09-15, v0.2.0)
+# Simple PI Calculator — 프로젝트 현황 (2026-09-15, v0.3.0)
 
 ## 목적
 PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR별 PDN 임피던스 |Z(f)|를 계산·표시하는 Windows 프로그램.
@@ -31,3 +31,7 @@ PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR�
 - 버그 수정: Run/Save 전 열린 셀 편집 커밋(입력값 무시되던 문제 — 사용자가 보고한 Dummy Cap "결과 동일" 원인), 체크박스 셀 아무 곳 클릭으로 토글, decap 모델 캐시를 파일 내용 해시로.
 - Dummy cap 물리 검토: 2N+dummy가 10 MHz에서 2N 일반보다 낮게 나오는 것은 bank 간 공진 피크 이동(9.66→8.81 MHz) 때문으로 정상.
 - 리뷰 문서: docs/REVIEW-v0.2.md. 테스트 671 통과. Release: SimplePICalculator-Setup-0.2.0.exe.
+
+## v0.3.0 (2026-09-15) 변경
+- Decaps 탭 전역 옵션 "Distance: Fixed / Normal (±1σ)": 각 via set의 거리를 행의 평균거리 D 중심, σ(mm, 기본 0.5) 절단정규분포(±1σ)에서 seed 기반 난수 추출(inverse-CDF, Acklam Φ⁻¹, numpy default_rng). Dummy Cap 행은 via set당 1 샘플. D_ref = max(D_k)+σ로 plane 높이는 seed와 무관. 프로젝트 스키마 4.
+- 리뷰(docs/REVIEW-v0.3.md): Φ⁻¹ 상위 꼬리 정밀도 수정, σ 필드가 다른 컨트롤 편집 시 반올림되던 GUI 버그 수정. σ=0.5 mm에서 seed 간 |Z| 편차 ≤1.5 %. 테스트 705 통과.
