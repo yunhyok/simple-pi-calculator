@@ -377,10 +377,12 @@ def _static_sums(X: np.ndarray, Y: np.ndarray, kx2: np.ndarray, ky2: np.ndarray,
                  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """S0, S1 and the dynamic mode indices (m, n) in row-major order (§3.3).
 
-    S_ij = Σ_m X_im X_jm C_{ij,m} with C_{ij,m} = Σ_n Y_in Y_jn W_mn. Ports on the same decap
-    (sub-)row share identical Y rows (same y and width), so the n-sum only has to be done for each
-    pair of *distinct* Y rows: cost R²/2·(M+1)(N+1) instead of 2·P²·(M+1)(N+1) for R distinct
-    rows. The axis with fewer distinct rows is chosen (roles of X/Y swapped, W transposed).
+    S_ij = Σ_m X_im X_jm C_{ij,m} with C_{ij,m} = Σ_n Y_in Y_jn W_mn. The grouping key is the
+    actual port factor row, i.e. the exact (y, w) of a port: ports on the same decap (sub-)row share
+    identical Y rows, so the n-sum only has to be done for each pair of *distinct* Y rows: cost
+    R²/2·(M+1)(N+1) instead of 2·P²·(M+1)(N+1) for R distinct rows. With sampled distances
+    (§2.5.5) every port has its own y; the key then degenerates to one group per port and the
+    x axis (ports of rows with equal port counts share x) is usually chosen instead. The axis with fewer distinct rows is chosen (roles of X/Y swapped, W transposed).
     Exactly the same terms are summed as in the row-by-row loop of §3.3; only the grouping (and
     therefore the floating-point rounding, ≈ 1e-16 relative) differs.
     """
@@ -494,18 +496,30 @@ def z_matrix_reference(cav: CavityModel, f_hz: np.ndarray) -> np.ndarray:
 # =============================================================================================
 def cavity_cache_key(a_m: float, b_m: float, pair: PlanePair, port_xy_m: np.ndarray,
                      port_widths_m: np.ndarray, f_eval_hz: np.ndarray,
-                     settings: ModeSettings, n_pads: int = 1) -> str:
+                     settings: ModeSettings, n_pads: int = 1,
+                     distance: tuple | None = None) -> str:
     """Digest of everything the cavity Z-matrix depends on (§3.9).
 
     Plane size, the full plane pair (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port
     coordinates and widths (pad row and decap rows), the number of pad ports N_pad (which
     partitions the matrix, §2.8), the evaluation frequencies and the mode settings. Floats enter with
     their exact binary value (``repr`` round-trips; arrays by their bytes).
+
+    ``distance`` = ``(mode, σ [m], seed, per-port distances [m])`` of a sampled distance
+    distribution (§2.5.5); ``None`` (fixed mode) keeps the 0.2.0 key. The port coordinates already
+    determine Z; the distribution enters the key explicitly so that entries of different sampling
+    settings are never confused.
     """
     h = hashlib.sha256()
     h.update(repr((float(a_m), float(b_m), pair, settings)).encode())
     if int(n_pads) != 1:  # N_pad = 1 keeps the pre-v3 key
         h.update(f"n_pads={int(n_pads)}".encode())
+    if distance is not None:
+        mode, sigma, seed, dists = distance
+        h.update(repr(("distance", str(mode), float(sigma), int(seed))).encode())
+        arr = np.ascontiguousarray(np.asarray(dists if dists is not None else [], dtype=float))
+        h.update(repr(arr.shape).encode())
+        h.update(arr.tobytes())
     for arr in (port_xy_m, port_widths_m, f_eval_hz):
         arr = np.ascontiguousarray(np.asarray(arr, dtype=float))
         h.update(repr(arr.shape).encode())

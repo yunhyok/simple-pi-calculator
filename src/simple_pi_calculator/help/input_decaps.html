@@ -74,6 +74,9 @@ ports of the row), <b>C @100 kHz</b> (capacitance of one model at 100 kHz) and <
 frequency of one model). <b>Preview model</b> plots |Z| of the selected model alone – a quick check that
 the file is read as expected.</p>
 <p>The filter box at the top ("All PWRs" or one name) follows the row selected in the PWR Nets tab.</p>
+<p>The second line of the tab holds the global <b>Distance</b> distribution (Fixed or Normal (±1σ)),
+<b>σ (mm)</b>, <b>Seed</b> and <b>New seed</b>; see <a href="#distribution">Distance distribution</a>. σ and
+the seed are disabled in Fixed mode.</p>
 
 <h2><a name="distance"></a>Distance to PAD and placement</h2>
 <p>The real component coordinates are not needed. For each PWR net the tool places:</p>
@@ -93,6 +96,43 @@ the PAD than the row distance.</p>
 spread across the width are farther from the PAD than the entered distance (√((x − W/2)² + d²)), which is
 physically correct for such a row. For a cluster of capacitors all close to the IC, use a small width or
 enter the capacitors as several rows with their actual distances.</p>
+
+<h2><a name="distribution"></a>Distance distribution</h2>
+<p>Real capacitors of one row are rarely all at exactly the same distance. The <b>Distance</b> option at the top
+of the Decaps tab applies to <b>every</b> decap row of every PWR net:</p>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="22%">Mode</th><th>Distance of each via set</th></tr>
+<tr><td><b>Fixed</b> (default)</td><td>Exactly the row's Distance to PAD D. This is the behaviour of version 0.2.0; results are
+unchanged.</td></tr>
+<tr><td><b>Normal (±1σ)</b></td><td>d = D + σ·z, where z is drawn from a standard normal distribution <b>truncated to
+[−1, 1]</b>. Every distance therefore lies between D − σ and D + σ; values near D are more likely.</td></tr>
+</table>
+<p>The truncated normal distribution on [−1, 1] has the density φ(z)/(Φ(1) − Φ(−1)) inside the interval and 0
+outside (φ, Φ: standard normal density and distribution function) [JKB94]. Its standard deviation is
+0.540·σ, so the entered σ is the half-width of the allowed band rather than the spread of the samples. The tool
+draws u uniformly from [0, 1) and uses z = Φ⁻¹(Φ(−1) + u·(Φ(1) − Φ(−1))) (inverse-transform sampling).</p>
+<ul>
+<li><b>σ (mm)</b>: absolute standard deviation, 0.01 … 50 mm, default 0.5 mm.</li>
+<li><b>Seed</b>: integer 0 … 2147483647, default 12345, stored in the project. The same seed and inputs always
+give the same distances and the same results (also on another computer). <b>New seed</b> draws a different
+random seed.</li>
+<li><b>Order</b>: one random sequence per computation, used by the enabled rows of the decap table from top to
+bottom (all PWR nets), and within a row by the via sets in port order. Adding, removing, enabling or disabling a
+row, or changing a count, therefore changes the samples of the rows below it.</li>
+<li><b>Dummy Cap rows</b>: a via set carrying two capacitors gets <b>one</b> sample – the pair shares its vias
+and moves together.</li>
+<li><b>Geometry</b>: each via set keeps its x position (and sub-row pattern) and is moved in y by d − D. The plane
+height uses the largest sampled distance: D_ref = max d, H = 1.4·D_ref. Ports that would leave the plane are moved
+to the edge (<code>W_DECAP_CLIPPED</code>).</li>
+<li>The <b>PWR Nets</b> preview shows the scattered via sets; hover a via set to see its row, index and
+distance. After a computation the Messages dock lists <code>I_DIST_SAMPLED</code> with σ, the seed and the
+min/mean/max distance per PWR net, and CSV/Touchstone exports record the same summary in their header.</li>
+</ul>
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="note"><b>Note.</b> One seed is one possible layout. To judge the spread of |Z| caused by distance
+variations, compute several seeds and compare the curves. A σ close to or larger than the distance itself lets via
+sets reach the PAD row (<code>W_DIST_SIGMA_LARGE</code>).</td></tr>
+</table>
 
 <h2><a name="dummy"></a>Dummy Cap</h2>
 <p>A <b>dummy cap</b> is a capacitor without vias of its own: it is connected by pads/traces to an adjacent
@@ -141,6 +181,9 @@ Identical models (same file, subcircuit and S2P mode) are computed only once.</p
 <tr><td><code>W_DECAP_CLIPPED</code></td><td>A row with many sub-rows extends beyond the plane; ports were moved to the plane edge.</td><td>Increase W, reduce the count, or split the row.</td></tr>
 <tr><td><code>W_PORT_OVERLAP</code></td><td>Two ports overlap (e.g. two rows with almost equal distance).</td><td>Merge the rows or separate their distances by more than a port width.</td></tr>
 <tr><td><code>I_DUMMY_SINGLE</code></td><td>Dummy Cap set on a row with only one capacitor; no effect.</td><td>Nothing.</td></tr>
+<tr><td><code>I_DIST_SAMPLED</code></td><td>Normal distance distribution: σ, seed and min/mean/max of the sampled distances of the PWR net.</td><td>Nothing; use it to document the run.</td></tr>
+<tr><td><code>W_DIST_SIGMA_LARGE</code></td><td>σ is not smaller than a row's distance: sampled via sets can reach the PAD row or the plane edge.</td><td>Reduce σ or check the distance.</td></tr>
+<tr><td><code>E_DIST_SIGMA</code>, <code>E_DIST_SEED</code>, <code>E_DIST_MODE</code></td><td>Invalid distance distribution (σ ≤ 0, seed outside 0 … 2147483647, unknown mode).</td><td>Correct the value in the Decaps tab or in the project file.</td></tr>
 <tr><td><code>E_XL_BOOL</code></td><td>A Dummy Cap cell is neither yes nor no.</td><td>Use Yes/No, 1/0 or TRUE/FALSE.</td></tr>
 <tr><td>unknown PWR name</td><td>The PWR Name of a row does not exist in the PWR list.</td><td>Fix the spelling (case-sensitive).</td></tr>
 <tr><td><code>E_SPICE_*</code>, <code>W_SPICE_*</code>, <code>E_S2P_*</code>, <code>W_S2P_*</code></td><td>Problems inside a model file.</td><td>See <a href="spice_models.html#messages">SPICE</a> and <a href="touchstone.html#messages">Touchstone</a>.</td></tr>

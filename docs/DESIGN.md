@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Document version | 1.4.1 — review v0.2 fixes (docs/REVIEW-v0.2.md): decap model cache keyed by file content, rounding tolerance of the clipping/overlap warnings, `E_PWR_FAILED`, `W_EXPORT_SKIPPED`. 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
+| Document version | 1.5 — **decap distance distribution** (§2.5.5): `fixed` (default, 0.2.0 behaviour) or `normal` (per-via-set distances from a normal distribution truncated to ±1σ, seeded, reproducible); schema 4 `decaps.distance_mode`/`sigma_mm`/`seed` (§4.7, §5.8.4), cavity cache key and grouping note (§3.9), Decaps tab controls and preview tooltip (§5.5), `I_DIST_SAMPLED` and export headers (§4.8), Appendix D #15. 1.4.1 — review v0.2 fixes (docs/REVIEW-v0.2.md): decap model cache keyed by file content, rounding tolerance of the clipping/overlap warnings, `E_PWR_FAILED`, `W_EXPORT_SKIPPED`. 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
 | Status | Implementation-ready |
 | License of project | MIT |
 | Target platform | Windows 10/11 x64 (development also works on Linux/macOS) |
@@ -349,7 +349,7 @@ d_k > 0 [m], count N_k ≥ 1, and Dummy Cap flag δ_k ∈ {false, true}. The PWR
 observation pads (PWR list column `Number of PADs`, integer, default 1, §4.3).
 
 ```
-D_ref = max_k d_k                      if G ≥ 1          [m]
+D_ref = max_k d_k                      if G ≥ 1          [m]   (normal distance mode: max_kj d_kj, §2.5.5)
 D_ref = W / 1.4                        if G = 0 (no decap rows: square plane H = W, plane-only result)
 H     = 1.4 · D_ref                                      [m]
 y_0   = 0.2 · D_ref                                      [m]  PAD-row centre line
@@ -430,6 +430,8 @@ for r = 0 … R_k−1:
 ```
 
 * P_k = 1 gives x = W/2 (centred), directly "above" a single PAD.
+* With the `normal` distance distribution (§2.5.5) the y of every decap port is shifted by its own
+  d_kj − d_k after the sub-row rule (x, sub-row index and port order unchanged).
 * **Port order** (normative, defines port indices): PADs = ports 0 … N_pad−1 (PAD sub-rows r
   ascending, within a sub-row left to right); then rows k in table order; within a row, sub-rows r
   ascending; within a sub-row, i ascending (left to right). The array `group_index[p − N_pad]` maps
@@ -465,6 +467,73 @@ row 1: y = 18 mm, x = 12.0839, 24.0280, 35.9720, 47.9161 mm.
   large plane (pessimistic). Review evidence (VDD_IO geometry, 10 mm separation, σ = ∞, 1 MHz):
   30 × 14 mm 0.2090 nH, 60 × 60 mm 0.1860 nH, infinite-plane image result 0.1842 nH.
 * A lumped "spreading inductance" fallback is not provided.
+
+#### 2.5.5 Distance distribution (fixed / truncated normal)
+
+A global option (project key `decaps.distance_mode`, §4.7; GUI Decaps tab, §5.5) applies to **every**
+enabled decap row of every PWR net.
+
+* **`fixed`** (default): every port of row k is at d_k (§2.5.3). This is exactly the 0.2.0 / schema-3
+  behaviour; code path, cavity cache keys and results are bit-identical.
+* **`normal`**: each cavity port (via set) j = 0 … P_k−1 of row k gets its own distance
+
+  ```
+  d_kj = d_k + σ · z_kj,        z_kj ~ TN(0, 1; −1, 1)          σ > 0 absolute [m] (`sigma_mm`, default 0.5 mm)
+  ```
+
+  where TN(0, 1; a, b) is the standard normal distribution truncated to [a, b] = [−1, 1] with density
+  f(z) = φ(z) / (Φ(b) − Φ(a)) for a ≤ z ≤ b and 0 otherwise, φ(z) = e^(−z²/2)/√(2π),
+  Φ(z) = ½·erfc(−z/√2) **[JKB94]**. Hence d_k − σ ≤ d_kj ≤ d_k + σ; E[z] = 0 and
+  Var[z] = 1 − 2φ(1)/(Φ(1) − Φ(−1)) = 0.29113 (standard deviation 0.5396·σ). σ is therefore the
+  half-width of the admissible band and the scale of the parent normal, not the sample spread.
+
+**Sampling (normative, reproducible).** Inverse-transform sampling of the truncated normal:
+
+```
+rng  = numpy.random.default_rng(seed)             seed: int 0 … 2³¹−1 (`decaps.seed`, default 12345), PCG64
+u    = rng.random(n)                              uniform [0, 1), float64
+p    = Φ(−1) + u · (Φ(1) − Φ(−1))
+z    = Φ⁻¹(p), clipped to [−1, 1]                 (guards the last-ulp rounding only)
+```
+
+Φ uses `math.erfc` (vectorised element-wise); Φ⁻¹ is Acklam's rational approximation
+(relative error < 1.15e-9) refined by one Halley step
+x ← x − u/(1 + x·u/2), u = (Φ(x) − p)·√(2π)·e^(x²/2) **[Acklam03]**, giving |Φ(Φ⁻¹(p)) − p| < 1e-13·p.
+No scipy. PCG64 and float64 arithmetic are platform independent; results for a given seed are
+identical across platforms up to the last-ulp behaviour of the C library `erfc`.
+
+Order: **one generator per computation**, created with the seed, drawn by the **enabled decap rows of the
+whole decap table in table order** (all PWR nets, before any net is computed — so the samples do not
+depend on the PWR order, worker threads, or failures of other nets), each row drawing P_k values in
+**port order** (§2.5.3). A Dummy Cap row (§2.6.5) draws **one sample per via set** (port), not per
+capacitor: the two capacitors of a pair share the via set and move together. Rows with N_k < 1 draw
+nothing. Consequently enabling/disabling a row or changing a count changes the samples of the rows
+below it (documented in Help). The GUI placement preview calls the same function
+(`engine.sample_project_distances`), so it shows exactly the computed geometry.
+
+**Geometry.** The x positions and the sub-row pattern of §2.5.3 are kept; port j of row k is moved in
+y by d_kj − d_k:
+
+```
+D_ref  = max over all decap ports of d_kj            (G = 0: W/1.4 as before)
+H      = 1.4 · D_ref,     y_0 = 0.2 · D_ref           (the PAD row follows D_ref)
+y_kj   = clip(y_r(j) + (d_kj − d_k), w/2, H − w/2)    y_r(j) = sub-row centre line of port j (§2.5.3)
+```
+
+so H still contains every port with the 20 % margins. Clipping counts per port (`W_DECAP_CLIPPED`),
+`W_DECAP_TOO_CLOSE` uses min_j d_kj, `W_PORT_OVERLAP` is unchanged. `Placement.port_distances_m`
+holds d_kj (= d_k in fixed mode).
+
+**Validation / messages.** `E_DIST_MODE` (mode not `fixed`/`normal`), `E_DIST_SIGMA` (σ ≤ 0 or not
+finite), `E_DIST_SEED` (not an integer 0 … 2³¹−1) are global errors (source `Decaps`, checked only in
+normal mode for σ and seed). `W_DIST_SIGMA_LARGE` per row when σ ≥ d_k (samples may reach the PAD row;
+negative d_kj are clipped to the plane edge). Info `I_DIST_SAMPLED` per PWR in normal mode: σ, seed and
+min/mean/max of the sampled distances.
+
+**Results.** `PwrResult.distance` (the `DistanceDistribution`, `None` for fixed) and
+`PwrResult.sampled_distances`: list of (row index k — position among the net's enabled rows, as in
+`group_index` —, port index j within the row, d_kj in mm) for every decap port, in port order (fixed mode:
+d_k). Exports record a summary line (§4.8).
 
 ### 2.6 Via model
 
@@ -978,6 +1047,16 @@ distinct rows is chosen). Exactly the same terms are summed; only the grouping (
 relative) differs. The worst case (every port on its own row) costs no more than the §3.3 loop and
 needs only O(R·(M+N) + P·M) extra memory.
 
+The grouping key is the actual port-factor row — i.e. the exact (y, w) of a port (resp. (x, w) for the
+x axis) — never the decap row index, so ports with equal y still group. With the `normal` distance
+distribution (§2.5.5) every decap port has its own y and the y grouping degenerates to R = P; the
+x axis (ports of rows with equal P_k share their x cells) is then chosen automatically. Measured
+(`tools/bench.py --distance normal`, best of 3–5, cold caches, 2-core Xeon): large MLO 0.29 s fixed →
+0.75 s normal with 2 workers (static sums 0.07 → 0.53 s), 0.42 → 0.82 s with 1 worker; example
+0.035 → 0.040 s; many nets 0.10 → 0.13 s — below the 3× threshold, so **no quantisation of y** is
+applied (a 10 µm grid would not help anyway: the 121 sampled y values of the large case still fall
+into 113 distinct bins, and it would change results).
+
 **Dynamic sum and Z assembly** (`CavityModel.z_matrix_into`). The (L, P²) real table
 T_l = u_l u_lᵀ is built once (≤ 64 MB, otherwise a per-frequency row product is used); per frequency
 chunk `Re dyn = Re g · T`, `Im dyn = Im g · T` are two real GEMMs with g = 1/(κ_L − k²). Then
@@ -1020,7 +1099,7 @@ user has set them (so the frozen build behaves the same without `threadpoolctl`)
 
 | Cache | Key | Invalidated by | Not invalidated by | Bound |
 |---|---|---|---|---|
-| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths (PAD row and decap rows), N_pad (only when ≠ 1, so N_pad = 1 keys are unchanged), evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, **Number of PADs** (pad positions and count), decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only (these enter only the loads Z_L and Z_via,pad, which are recomputed on every run; PAD vias also changes w_pad and therefore the key) | 32 entries and 512 MB, LRU; stored read-only |
+| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths (PAD row and decap rows), N_pad (only when ≠ 1, so N_pad = 1 keys are unchanged), evaluation frequencies (grid ∪ markers), `ModeSettings`; in `normal` distance mode (§2.5.5) also `(mode, σ, seed)` and the sampled per-port distances (fixed mode keeps the 0.2.0 key) | distance mode, σ and seed (normal mode), plane width, **Number of PADs** (pad positions and count), decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | σ and seed in fixed mode, decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only (these enter only the loads Z_L and Z_via,pad, which are recomputed on every run; PAD vias also changes w_pad and therefore the key) | 32 entries and 512 MB, LRU; stored read-only |
 | Decap model (`DecapModelCache`, existing) | abs path, size, SHA-256 of the file content, subckt, S2P mode (content, not mtime: a same-size edit that keeps the modification time — coarse FAT/SMB clocks, tools restoring mtimes — still invalidates; review v0.2) | file edit | touch without content change | unbounded (small) |
 | Decap impedance (memo on each cached model object) | exact evaluation frequency vector | new model object (file edit, subckt, mode), sweep | everything else | 8 sweeps per model; warnings replayed on hits |
 
@@ -1368,7 +1447,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | Key | Type | Notes |
 |---|---|---|
 | `format` | const `"simple-pi-calculator-project"` | |
-| `schema_version` | int ≥ 1 | current = 3 (`CURRENT_SCHEMA_VERSION`); 2 = one PAD per net (no `pwr.rows[].n_pads`); 1 = v0.1 with `vias.vias_per_decap` |
+| `schema_version` | int ≥ 1 | current = 4 (`CURRENT_SCHEMA_VERSION`); 3 = no distance distribution (always fixed); 2 = one PAD per net (no `pwr.rows[].n_pads`); 1 = v0.1 with `vias.vias_per_decap` |
 | `app_version` | str | writer version |
 | `stackup.source_path` | str or null | |
 | `stackup.layers[]` | objects `{number:int, name:str, thickness_mm:float, conductivity_s_per_m:float or null, dk:float or null, df:float or null}` | |
@@ -1387,6 +1466,9 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `pwr.source_path` | str or null | |
 | `pwr.rows[]` | `{name:str, pwr_layer:int, gnd_layer:int, width_mm:float, n_pads:int, enabled:bool}` | height is never stored (derived); `n_pads` = number of observation PADs N_pad (int ≥ 1, default 1 when missing; schema 2 → 3 adds `n_pads: 1`) |
 | `decaps.source_path` | str or null | |
+| `decaps.distance_mode` | `"fixed"`/`"normal"` | default fixed (§2.5.5); unknown value → `W_PROJECT_VALUE`, fixed used; schema 3 → 4 adds `"fixed"` |
+| `decaps.sigma_mm` | float > 0 | default 0.5; σ of the normal distance distribution (absolute, mm); ≤ 0 → `W_PROJECT_VALUE`, 0.5 used |
+| `decaps.seed` | int 0 … 2147483647 | default 12345; random seed; out of range → `W_PROJECT_VALUE`, 12345 used |
 | `decaps.rows[]` | `{pwr_name:str, model_file:str, count:int, distance_mm:float, dummy:bool, subckt:str or null, s2p_mode:"series"/"shunt" or null, enabled:bool}` | `dummy` default false |
 | `sweep` | `{f_start_hz, f_stop_hz, n_points, show_plane_only:bool}` | defaults 1e5, 1e9, 400, false |
 | `display` | `{z_unit:"ohm"/"mohm"/"uohm"}` | default mohm |
@@ -1418,7 +1500,7 @@ Example named project (abridged):
 ```json
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 3,
+  "schema_version": 4,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -1435,7 +1517,8 @@ Example named project (abridged):
   "pwr": {"source_path": "pwr_list.xlsx", "rows": [
     {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "n_pads": 1, "enabled": true},
     {"name": "VDD_IO", "pwr_layer": 7, "gnd_layer": 9, "width_mm": 30, "n_pads": 1, "enabled": true}]},
-  "decaps": {"source_path": "decap_list.xlsx", "rows": [
+  "decaps": {"source_path": "decap_list.xlsx", "distance_mode": "fixed", "sigma_mm": 0.5,
+             "seed": 12345, "rows": [
     {"pwr_name": "VDD_CORE", "model_file": "cap_0402_100nF.mod", "count": 10, "distance_mm": 8,
      "dummy": false, "subckt": null, "s2p_mode": null, "enabled": true},
     {"pwr_name": "VDD_IO", "model_file": "cap_0402_100nF.mod", "count": 4, "distance_mm": 5,
@@ -1510,6 +1593,11 @@ one `<PWR>.<ext>` per PWR tab (`safe_file_name`: `<>:"/\|?*` and control chars �
 Windows names prefixed with `_`, case-insensitive duplicates get `_2`, `_3`, …), with the current
 unit / marker / plane-only / curve-visibility settings, in the default view (§5.6) unless "keep
 current zoom". Rendering details: §5.6.
+
+**Distance distribution line (§2.5.5).** CSV (per-PWR header and combined file), Touchstone comments and
+the XLSX Summary sheet contain one line per PWR: `Distance distribution: fixed (every capacitor at its row
+distance)` or `Distance distribution: normal truncated to +/-1 sigma, sigma = <σ> mm, seed = <seed>;
+sampled min/mean/max = <a>/<b>/<c> mm over <P> via set(s)` (ASCII, `io.export.distance_summary_line`).
 
 ---
 
@@ -1688,6 +1776,7 @@ class DecapGroupGeom:
     count: int                 # N_k ≥ 1
     distance_m: float          # d_k > 0
     dummy: bool = False        # δ_k
+    port_distances_m: tuple[float, ...] | None = None   # d_kj per port (§2.5.5); None = d_k
 
 @dataclass(frozen=True)
 class Placement:
@@ -1700,6 +1789,7 @@ class Placement:
     port_widths_m: np.ndarray  # (P,) w_pad × N_pad, then w_dec
     n_pads: int = 1            # N_pad; properties n_ports, n_decap_ports = P − N_pad,
                                # pad_xy_m (first pad), pads_xy_m (N_pad, 2)
+    port_distances_m: np.ndarray | None  # (P-N_pad,) d_kj (= d_k in fixed mode, §2.5.5)
 
 def plane_height(width_m: float, distances_m: Sequence[float]) -> tuple[float, float]:
     """Returns (H, D_ref) per §2.5.1 (no distances → D_ref = W/1.4, H = W)."""
@@ -1832,6 +1922,7 @@ class DecapGroup:
     count: int
     distance_m: float
     dummy: bool = False
+    port_distances_m: tuple[float, ...] | None = None   # sampled d_kj (§2.5.5)
 
 @dataclass
 class PwrResult:
@@ -1844,13 +1935,19 @@ class PwrResult:
     placement: Placement             # derived W, H, D_ref, port coordinates (for preview/export)
     info: dict[str, float | int | str]   # C_plane, er_eff, tand_eff, d_m, W_m, H_m, D_ref_m, M, N, n_dynamic, P, n_pads, h_near_m, h_r_m, L_loop, w_pad_m, w_dec_m, min_rcond
     issues: list[Issue]
+    distance: DistanceDistribution | None = None        # §2.5.5; None = fixed
+    sampled_distances: list[tuple[int, int, float]]     # (row k, port j in row, d_kj mm) per decap port
     n_pads: int  (property)          # = placement.n_pads
 
 def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                 vias: ViaSettings, f_grid_hz: np.ndarray, marker_f_hz: Sequence[float],
                 want_plane_only: bool, issues: IssueCollector,
                 progress: Callable[[float], None] | None = None,
-                cancel: Callable[[], bool] | None = None) -> PwrResult: ...
+                cancel: Callable[[], bool] | None = None,
+                settings: ModeSettings = ModeSettings(), workers: int | None = 1,
+                cavity_cache: CavityCache | None = None,
+                distance: DistanceDistribution | None = None) -> PwrResult: ...
+    # normal mode: groups without port_distances_m are sampled with one generator over `groups`
 
 def port_loads(f_hz: np.ndarray, placement: Placement, groups: Sequence[DecapGroup],
                z_decap: Sequence[np.ndarray], z_via_dec: np.ndarray,
@@ -1879,8 +1976,24 @@ class ProjectInputs:           # pure-python mirror of the project JSON, SI-conv
     project_dir: str | None
     model_search_dir: str | None
     s2p_default_mode: str
+    distance: DistanceDistribution = DistanceDistribution()   # §2.5.5 (mode, sigma_m, seed)
 
 class CancelledError(Exception): ...
+def sample_project_distances(rows: Sequence[DecapRow], distance: DistanceDistribution | None
+                             ) -> dict[int, tuple[float, ...]]: ...
+    # §2.5.5: {table row index: d_kj per port}, one generator over the enabled rows; {} for fixed
+
+# core/distribution.py (§2.5.5)
+@dataclass(frozen=True)
+class DistanceDistribution:
+    mode: str = "fixed"; sigma_m: float = 0.5e-3; seed: int = 12345
+    is_fixed: bool (property); def validate(self) -> list[tuple[str, str]]: ...
+def norm_cdf(x) -> np.ndarray: ...                 # ½·erfc(−x/√2)
+def norm_ppf(p) -> np.ndarray: ...                 # Acklam + one Halley step
+def truncated_standard_normal(rng, n) -> np.ndarray: ...
+def sample_offsets(port_counts, seed) -> list[np.ndarray]: ...
+def sample_row_distances(rows: Sequence[tuple[int, float, bool]],
+                         distribution) -> list[tuple[float, ...] | None]: ...
 
 def validate_inputs(inputs: ProjectInputs) -> list[Issue]: ...
 def compute_project(inputs: ProjectInputs,
@@ -1918,7 +2031,8 @@ def read_decap_list(path, issues) -> list[DecapRow]: ...
 
 # io/project_io.py
 @dataclass
-class Project: ...   # mm-valued, JSON-mirroring dataclass (see §4.7), with defaults
+class Project: ...   # mm-valued, JSON-mirroring dataclass (see §4.7), with defaults;
+                     # Project.distance: DistanceSettings(mode="fixed", sigma_mm=0.5, seed=12345)
 
 @dataclass
 class WindowState:
@@ -1972,10 +2086,11 @@ class AutosaveStore:                      # Qt-free, unit-testable
     def quarantine(self, path: str, tag: str) -> str: ...        # rename, returns new path
 
 # io/migrations.py
-CURRENT_SCHEMA_VERSION: int = 3
+CURRENT_SCHEMA_VERSION: int = 4
 def migrate_1_to_2(doc: dict) -> dict: ...           # vias.vias_per_decap v → vias.vias_per_pad
 def migrate_2_to_3(doc: dict) -> dict: ...           # pwr.rows[].n_pads = 1 added
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3}
+def migrate_3_to_4(doc: dict) -> dict: ...           # decaps.distance_mode/sigma_mm/seed = fixed/0.5/12345
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3, 3: migrate_3_to_4}
 def migrate(doc: dict, issues: IssueCollector) -> dict: ...
 
 # io/export.py
@@ -2049,13 +2164,23 @@ minimum 1100 × 700.
      (QPainter, no computation) draws the synthetic plane W × H of the selected PWR with all N_pad
      PADs (red squares, label "PAD" or "N PADs", header text "N_pad = N"), decap ports (blue squares;
      ports carrying 2 caps drawn with a double outline) and dimension labels, using
-     `core.placement.place_ports(…, n_pads)`.
+     `core.placement.place_ports(…, n_pads)`. With the `normal` distance distribution the ports are
+     placed at the sampled distances of `engine.sample_project_distances` (same samples as the
+     computation, §2.5.5) and the header adds "normal ±1σ: σ … mm, seed …"; a tooltip on
+     hover names the port under the cursor (PAD i, or decap row with table row number and model file,
+     via set index, capacitors, distance to the PAD row, x/y).
   4. *Decaps*: filter `QComboBox` ("All PWRs" + names; auto-synced to the selected row in the PWR
      tab); toolbar (Import…, Add, Remove); `DecapTableModel` via `QSortFilterProxyModel` (columns:
      Enabled, PWR Name [combo delegate], Decap File [line edit + "…" browse delegate], Subckt,
      S2P Mode, Count, Distance mm, Dummy Cap ☑ [checkbox, `Qt.ItemIsUserCheckable`], derived:
      Via sets (P_k), C @100 kHz, SRF MHz). Adding a row pre-fills PWR Name
-     with the filter value. A "Preview model" button plots |Z_decap| in a small dialog.
+     with the filter value. A "Preview model" button plots |Z_decap| in a small dialog. A second top
+     bar holds the **global distance distribution** (§2.5.5): "Distance:" `QComboBox`
+     [Fixed | Normal (±1σ)], "σ (mm)" `QDoubleSpinBox` (0.01–50, 3 decimals, default 0.5), "Seed"
+     `QSpinBox` (0 … 2³¹−1, default 12345) and a "New seed" button (`secrets.randbelow`, always a
+     different value); σ, seed and the button are disabled in Fixed mode. Any change writes
+     `Project.distance`, emits `DecapPanel.edited` (→ modified, stale results, auto-save) and refreshes
+     the placement preview.
   5. *Sweep*: f start / f stop (`QLineEdit` with an **engineering** frequency parser, NOT the SPICE
      parser: case-sensitive suffixes `k`/`K` = 1e3, `M` or `meg`/`MEG` = 1e6, `G` = 1e9, optional
      trailing `Hz`; lower-case `m` is rejected to avoid milli/mega confusion; e.g. `100k`, `1G`,
@@ -2253,7 +2378,10 @@ class AutosaveManager(QObject):
   `tests/data/project_v1.spical.json` (the v0.1 example project). **Schema 3**: `pwr.rows[].n_pads`
   (number of observation PADs; a change of meaning — schema 2 had exactly one PAD per net — hence a
   bump although the key has a default; `MIGRATIONS[2] = migrate_2_to_3` adds `n_pads: 1`); frozen
-  fixture `tests/data/project_v2.spical.json` (the schema-2 example project).
+  fixture `tests/data/project_v2.spical.json` (the schema-2 example project). **Schema 4**:
+  `decaps.distance_mode`, `decaps.sigma_mm`, `decaps.seed` (§2.5.5; `MIGRATIONS[3] = migrate_3_to_4`
+  adds `"fixed"`, 0.5, 12345, so every schema-3 project computes identically); frozen fixture
+  `tests/data/project_v3.spical.json` (the 0.2.0 example project).
 * **No bump** for backward-compatible additive changes: a new optional key with a default. Old
   readers ignore unknown keys; new readers default missing keys.
 * **Bump by 1** for any rename, removal, unit or meaning change. Every bump adds a pure function
@@ -2574,6 +2702,17 @@ All with D_drill = 0.2 mm ⇒ w = 0.223690 mm; coordinates compared with abs 1e-
     `E_PWR_NPADS` for N_pad = 0; `E_PWR_WIDTH_TOO_SMALL` for W = 1 mm, w_pad = 0.5 mm, N_pad = 2 (not
     for N_pad = 1); `W_PAD_CLIPPED` for W = 5 mm, d = 1 mm, N_pad = 100 with all pad y within
     [w_pad/2, H − w_pad/2].
+12. **Distance distribution (§2.5.5, `test_distance_distribution.py`):** Φ/Φ⁻¹ round trip < 1e-13;
+    truncated samples in [−1, 1] with mean 0 and variance 0.29113 (200 000 samples, fixed seed); one
+    stream (rows are consecutive slices of one draw), same seed identical, different seed different;
+    P_k samples per row (ceil(N/2) for Dummy Cap); per-port y = fixed position + (d_kj − d_k) incl.
+    sub-rows, x unchanged, D_ref = max d_kj, H = 1.4·D_ref; `W_DECAP_CLIPPED` for a sampled d < 0;
+    engine: fixed mode identical to the default path, σ = 1e-7 mm within 1e-6 of fixed, all samples in
+    [d − σ, d + σ], sample mean of 2000 via sets within 25 µm of d, table-order stream shared by all
+    nets (single-net run identical), cache key contains mode/σ/seed (warm = cold), export header line;
+    GUI (`test_gui_distance.py`): toggling mode/σ/seed marks the project modified, enables the
+    controls, scatters the preview (tooltip), changes the results, persists in the project file and the
+    auto-save; Fixed again reproduces the fixed result bit-identically.
 
 ### 8.5 `test_via.py`
 
@@ -2906,6 +3045,12 @@ the text above.
 * **[Goldfarb91]** M. E. Goldfarb, R. A. Pucel, "Modeling via hole grounds in microstrip," *IEEE
   Microwave and Guided Wave Letters*, vol. 1, no. 6, pp. 135–137, 1991. — via-hole inductance
   formula.
+* **[JKB94]** N. L. Johnson, S. Kotz, N. Balakrishnan, *Continuous Univariate Distributions*, vol. 1,
+  2nd ed., Wiley, 1994, ch. 13 (truncated normal distributions). — density, moments and
+  sampling of the doubly truncated normal distribution used for the decap distances (§2.5.5).
+* **[Acklam03]** P. J. Acklam, "An algorithm for computing the inverse normal cumulative distribution
+  function," technical note (web), c. 2003 (rational approximation with relative error < 1.15e-9 and a
+  Halley refinement step). — Φ⁻¹ of §2.5.5.
 * **[Grover46]** F. W. Grover, *Inductance Calculations: Working Formulas and Tables*, Van Nostrand,
   1946 (Dover reprint). — geometric mean distance of a square area (0.44705 × side), of a circle and
   of groups of conductors; mutual inductance of parallel filaments (partial mutual inductance M_p).
@@ -2940,6 +3085,7 @@ the text above.
 | E_STACK_*, W_STACK_* | §2.2, §4.2 |
 | E_PWR_* (incl. E_PWR_WIDTH_TOO_SMALL, E_PWR_NPADS), W_PAD_CLIPPED, W_PWR_FAR_GND, W_PWR_NO_DECAPS, W_XL_COLUMN_IGNORED | §2.5, §4.3 |
 | E_DECAP_FILE_NOT_FOUND, E_DECAP_FILE_TYPE, E_DECAP_DISTANCE, E_DREF_TOO_SMALL, W_DECAP_TOO_CLOSE, W_DECAP_CLIPPED, W_PORT_OVERLAP, I_DUMMY_SINGLE, E_XL_BOOL | §2.5, §2.6.5, §4.4 |
+| E_DIST_MODE, E_DIST_SIGMA, E_DIST_SEED, W_DIST_SIGMA_LARGE, I_DIST_SAMPLED | §2.5.5 |
 | E_PROJECT_FORMAT, E_PROJECT_NEWER, I_PROJECT_MIGRATED, W_PROJECT_UNKNOWN_KEY | §4.7, §5.8.4 |
 | W_AUTOSAVE_CORRUPT, W_AUTOSAVE_RECOVERED_BACKUP, W_AUTOSAVE_NEWER | §5.8.3 |
 | E_VIA_ANTIPAD, E_VIA_COUNT, E_VIA_PITCH, W_VIA_PITCH_SMALL, W_VIA_ZERO_LENGTH | §2.6 |
@@ -2956,8 +3102,10 @@ explanations for every code in its area.
    vias per pad, `pad_via_count`) and w_dec (n = `vias_per_pad`) from the via-cluster GMD rule (§2.4.5).
 2. Collect enabled decap rows for the PWR; load/cached DecapModel for each; evaluate Z_decap on
    f_eval = grid ∪ markers.
-3. Derive D_ref and H, place the N_pad PADs (PAD row) and the decap ports, compute caps per port
-   (§2.5, §2.6.5); compute C_plane for W × H.
+3. (Once per computation, before step 1 of any net.) In `normal` distance mode draw d_kj for all
+   enabled decap rows of the table in table/port order (§2.5.5).
+   Derive D_ref and H (from d_kj), place the N_pad PADs (PAD row) and the decap ports, compute caps per
+   port (§2.5, §2.6.5); compute C_plane for W × H; `I_DIST_SAMPLED` in normal mode.
 4. Build CavityModel with a = W, b = H (mode counts §3.2, static sums §3.3) and evaluate
    Z_cav(f_eval).
 5. Via geometry h_near = z_top(nearer plane), t_near, h_R (§2.6.1); L_loop = L_pair(h_near, s_v) + L_ap
@@ -3075,3 +3223,14 @@ Deviations and clarifications found while reviewing the implementation against t
     "Distance to PAD" is still measured from y_0; the cavity cache key adds N_pad only when N_pad ≠ 1
     (the Z-matrix itself depends only on the port coordinates and widths). N_pad = 4 on the example
     is not equivalent to one pad with 4 PAD vias (425.9 vs 445.7 mΩ @100 MHz for VDD_IO, §8.11).
+15. **Schema 4, decap distance distribution (§2.5.5, v0.3.0).** New global option `fixed`/`normal`
+    (`core/distribution.py`, `ProjectInputs.distance`, `Project.distance`, `decaps.distance_mode`,
+    `sigma_mm`, `seed`; GUI Decaps tab top bar). Fixed mode takes the unchanged code path: the example,
+    large-MLO and many-nets benchmark results and all port coordinates are bit-identical to 0.2.0.
+    Clarifications: the random stream covers the enabled rows of the whole decap table (not per net)
+    so that the preview, single-net and multi-net computations agree; a sampled distance may be ≤ 0
+    when σ ≥ d_k (`W_DIST_SIGMA_LARGE`, the port is clipped to the plane edge) instead of being
+    rejected; σ and seed are validated only in normal mode; the cavity grouping key was already the
+    exact port-factor row, so no code change was needed there (§3.9 note). Test note: σ → 0 matches
+    fixed mode linearly in σ (the ports and H move by ≈ σ); at the sharp VDD_IO plane resonance the
+    deviation is 1.3e-6 per nm of σ, so the 1e-6 test uses σ = 1e-7 mm.

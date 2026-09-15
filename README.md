@@ -43,6 +43,8 @@ and [Limitations](#limitations) below.
   modified nodal analysis, or measured Touchstone v1 `.s2p` two-port data converted to impedance
   for a series-through or shunt-through fixture.
 * **Dummy Cap rows** — model two capacitors sharing one via set (common escape-routing pattern).
+* **Distance distribution** — keep every capacitor at its row distance (default) or scatter each via
+  set with a normal distribution truncated to ±1σ around it, reproducible through a stored seed.
 * **Interactive plots** — log-log |Z(f)| per PWR net plus an overview of all nets, unit selectable
   (Ω / mΩ / µΩ), zoom/pan, hover readout, fixed marker lines at 1 MHz / 10 MHz / 100 MHz with exact
   |Z| readouts (a readout table lists them per net; "n/a" when a marker lies outside the sweep), and
@@ -208,6 +210,11 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
   decap row (a single PAD sits at (W/2, 0.2·D_ref)); each decap row lies at
   y = 0.2·D_ref + distance (measured from the PAD row), its via sets spread evenly across the width with a 10 % margin (several
   sub-rows if they do not fit). Plane capacitance and resonances are those of this synthetic plane.
+* **Distance distribution.** By default every via set of a row sits exactly at the row distance D.
+  With *Normal (±1σ)* each via set gets its own distance D + σ·z, z ~ N(0, 1) truncated to [−1, 1]
+  (**JKB94**), keeps its x position and moves in y; D_ref is then the largest sampled distance. The
+  samples come from `numpy.random.default_rng(seed)` in table/port order, so a seed reproduces a run;
+  a Dummy Cap via set gets one sample for both capacitors.
 * **All components on the Top side.** Vias run from the top surface to the nearer of the PWR/GND
   planes.
 * **Dielectric between the planes** is the series combination of all intermediate dielectric
@@ -250,6 +257,10 @@ Measured with `python tools/bench.py` (best of 3, cold caches, 2-core Xeon, nump
 | Many nets (6 nets, 3 decap rows each) | 0.22–0.27 s | 0.08 s | 0.06 s | 0.02 s |
 
 Results are identical to v0.1.0 within 2e-10 relative (golden example: 7e-11).
+
+With the *Normal (±1σ)* distance distribution every decap port has its own y, so the per-row grouping of
+the static modal sums no longer applies: Large MLO takes 0.76 s instead of 0.29 s (Auto, 2 threads;
+0.82 s vs 0.42 s on 1 thread). Fixed mode is unchanged.
 
 ## Limitations
 

@@ -159,6 +159,11 @@ EDITS = {
     "f_stop": (lambda p: setattr(p.sweep, "f_stop_hz", 2e9), []),
     "n_points": (lambda p: setattr(p.sweep, "n_points", 57), []),
     "plane-only off": (lambda p: setattr(p.sweep, "show_plane_only", False), []),
+    # decap distance distribution (§2.5.5): σ and seed have no effect in fixed mode
+    "distance mode normal": (lambda p: setattr(p.distance, "mode", "normal"),
+                             ["VDD_CORE", "VDD_IO"]),
+    "sigma in fixed mode": (lambda p: setattr(p.distance, "sigma_mm", 2.0), []),
+    "seed in fixed mode": (lambda p: setattr(p.distance, "seed", 1), []),
     # documented no-ops
     "workers": (lambda p: setattr(p.advanced, "workers", 3), []),
     "display unit": (lambda p: setattr(p.display, "z_unit", "ohm"), []),
@@ -352,3 +357,20 @@ def test_model_cache_drops_superseded_file_versions(tmp_path):
         zs.append(model.impedance(np.array([1e6]))[0])
     assert len(cache) == 1
     assert zs[0] != zs[1] != zs[2]
+
+
+@pytest.mark.parametrize("attr,value", [("sigma_mm", 0.3), ("seed", 777)])
+def test_warm_bridge_normal_mode_sigma_and_seed(workspace, attr, value):
+    """§2.5.5: in normal mode σ and the seed are part of the cavity cache key."""
+    project, path = workspace
+    project = copy.deepcopy(project)
+    project.distance.mode = "normal"
+    bridge = EngineBridge()
+    base = _run(bridge, project, path)
+    _same(base, _cold(project, path))
+    edited = copy.deepcopy(project)
+    setattr(edited.distance, attr, value)
+    warm = _run(bridge, edited, path)
+    _same(warm, _cold(edited, path))
+    _differs(warm, base, ["VDD_CORE", "VDD_IO"])
+    _same(_run(bridge, project, path), base)

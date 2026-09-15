@@ -23,7 +23,12 @@ from simple_pi_calculator.constants import (
     APP_NAME,
     APPDATA_ENV_VAR,
     DEFAULT_ANTIPAD_DIAMETER_MM,
+    DEFAULT_DISTANCE_MODE,
+    DEFAULT_DISTANCE_SEED,
+    DEFAULT_DISTANCE_SIGMA_MM,
     DEFAULT_DRILL_DIAMETER_MM,
+    DISTANCE_MODES,
+    DISTANCE_SEED_MAX,
     DEFAULT_F_START_HZ,
     DEFAULT_F_STOP_HZ,
     DEFAULT_MOUNTING_INDUCTANCE_NH,
@@ -87,6 +92,16 @@ class AdvancedSettings:
 
 
 @dataclass
+class DistanceSettings:
+    """Decap distance distribution (``decaps.distance_mode`` / ``sigma_mm`` / ``seed``, §2.5.5,
+    §4.7, schema 4), mm-valued."""
+
+    mode: str = DEFAULT_DISTANCE_MODE  #: "fixed" (0.2.0 behaviour) or "normal" (±1σ truncated)
+    sigma_mm: float = DEFAULT_DISTANCE_SIGMA_MM
+    seed: int = DEFAULT_DISTANCE_SEED
+
+
+@dataclass
 class SweepSettings:
     """``sweep`` block (§4.7, §3.1)."""
 
@@ -119,6 +134,7 @@ class Project:
     pwr_rows: list[PwrRow] = field(default_factory=list)
     decap_source_path: str | None = None
     decap_rows: list[DecapRow] = field(default_factory=list)
+    distance: DistanceSettings = field(default_factory=DistanceSettings)
     sweep: SweepSettings = field(default_factory=SweepSettings)
     display: DisplaySettings = field(default_factory=DisplaySettings)
     migrated_from: int | None = field(default=None, compare=False, repr=False)
@@ -304,6 +320,9 @@ def project_to_dict(project: Project, anchor_dir: str | None,
                           "n_pads": int(r.n_pads), "enabled": bool(r.enabled)}
                          for r in project.pwr_rows]},
         "decaps": {"source_path": _path_out(project.decap_source_path, anchor_dir),
+                   "distance_mode": project.distance.mode,
+                   "sigma_mm": float(project.distance.sigma_mm),
+                   "seed": int(project.distance.seed),
                    "rows": [{"pwr_name": r.pwr_name,
                              "model_file": _path_out(r.model_file, anchor_dir),
                              "count": int(r.count), "distance_mm": float(r.distance_mm),
@@ -336,6 +355,25 @@ def _workers_in(rd: Any, ad: dict) -> int:
         return DEFAULT_WORKERS
     return value
 
+def _distance_in(rd: Any, dc: dict) -> DistanceSettings:
+    """``decaps.distance_mode`` / ``sigma_mm`` / ``seed`` (§4.7): out-of-range values → default +
+    ``W_PROJECT_VALUE``."""
+    mode = rd.enum(dc, "distance_mode", "decaps.", DISTANCE_MODES, DEFAULT_DISTANCE_MODE) \
+        or DEFAULT_DISTANCE_MODE
+    sigma = rd.number(dc, "sigma_mm", "decaps.", DEFAULT_DISTANCE_SIGMA_MM)
+    if sigma is None or not (sigma > 0.0) or sigma == float("inf"):
+        rd.issues.warning("W_PROJECT_VALUE", f"'decaps.sigma_mm' = {sigma} must be > 0; "
+                          f"{DEFAULT_DISTANCE_SIGMA_MM} mm used.", None, "decaps.sigma_mm")
+        sigma = DEFAULT_DISTANCE_SIGMA_MM
+    seed = rd.integer(dc, "seed", "decaps.", DEFAULT_DISTANCE_SEED)
+    if not 0 <= seed <= DISTANCE_SEED_MAX:
+        rd.issues.warning("W_PROJECT_VALUE", f"'decaps.seed' = {seed} is outside "
+                          f"0…{DISTANCE_SEED_MAX}; {DEFAULT_DISTANCE_SEED} used.", None,
+                          "decaps.seed")
+        seed = DEFAULT_DISTANCE_SEED
+    return DistanceSettings(mode=mode, sigma_mm=float(sigma), seed=int(seed))
+
+
 _TOP_KEYS = {"format", "schema_version", "app_version", "stackup", "vias", "advanced", "pwr",
              "decaps", "sweep", "display", "session"}
 _SECTION_KEYS = {
@@ -345,7 +383,7 @@ _SECTION_KEYS = {
     "advanced": {"via_model", "plating_thickness_mm", "via_conductivity_s_per_m",
                  "mounting_inductance_nh", "s2p_default_mode", "model_search_dir", "workers"},
     "pwr": {"source_path", "rows"},
-    "decaps": {"source_path", "rows"},
+    "decaps": {"source_path", "distance_mode", "sigma_mm", "seed", "rows"},
     "sweep": {"f_start_hz", "f_stop_hz", "n_points", "show_plane_only"},
     "display": {"z_unit"},
 }
@@ -583,6 +621,7 @@ def project_from_dict(doc: dict, anchor_dir: str | None,
     rd.unknown(dc, _SECTION_KEYS["decaps"], "decaps.")
     project.decap_source_path = _path_in(rd.string(dc, "source_path", "decaps.", None),
                                          anchor_dir)
+    project.distance = _distance_in(rd, dc)
     excel_dir = os.path.dirname(project.decap_source_path) if (
         project.decap_source_path and os.path.isabs(project.decap_source_path)) else None
     for idx, row in enumerate(rd.rows(dc, "rows", "decaps.")):
@@ -721,6 +760,7 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
     Only enabled PWR rows become ``PwrSpec``; all decap rows are passed (each carries ``enabled``).
     Engine modules are imported lazily.
     """
+    from simple_pi_calculator.core.distribution import DistanceDistribution
     from simple_pi_calculator.core.engine import ProjectInputs
     from simple_pi_calculator.core.pdn import PwrSpec
     from simple_pi_calculator.core.via import ViaSettings
@@ -757,6 +797,9 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
         decap_source_dir=(os.path.dirname(project.decap_source_path)
                           if project.decap_source_path and os.path.isabs(project.decap_source_path)
                           else None),
+        distance=DistanceDistribution(mode=str(project.distance.mode),
+                                      sigma_m=float(project.distance.sigma_mm) * MM,
+                                      seed=int(project.distance.seed)),
     )
 
 
@@ -959,6 +1002,7 @@ __all__ = [
     "ViaInputs",
     "AdvancedSettings",
     "SweepSettings",
+    "DistanceSettings",
     "DisplaySettings",
     "WindowState",
     "PlotView",

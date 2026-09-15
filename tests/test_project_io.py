@@ -294,7 +294,7 @@ def test_frozen_schema_1_fixture_loads_through_chain(tmp_path: Path):
         [(r.count, r.distance_mm, r.dummy) for r in current.decap_rows]
     assert [r.n_pads for r in project.pwr_rows] == [1, 1]
     doc = project_to_dict(project, str(tmp_path), None)
-    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 3
+    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 4
     assert "vias_per_decap" not in doc["vias"] and doc["vias"]["vias_per_pad"] == 1
     assert all(r["n_pads"] == 1 for r in doc["pwr"]["rows"])
 
@@ -331,8 +331,71 @@ def test_frozen_schema_2_fixture_loads_through_chain(tmp_path: Path):
     assert project.vias == current.vias
     assert [r.n_pads for r in project.pwr_rows] == [1, 1]
     doc = project_to_dict(project, str(tmp_path), None)
-    assert doc["schema_version"] == 3
+    assert doc["schema_version"] == 4
     assert [r["n_pads"] for r in doc["pwr"]["rows"]] == [1, 1]
+
+
+def test_migrate_3_to_4_adds_distance_distribution():
+    """Schema 4: the ``decaps`` block gets ``distance_mode = "fixed"``, ``sigma_mm = 0.5`` and
+    ``seed = 12345`` (§2.5.5); the input is not mutated and existing values are kept."""
+    doc = {"format": "simple-pi-calculator-project", "schema_version": 3,
+           "decaps": {"source_path": None, "rows": []}}
+    snapshot = copy.deepcopy(doc)
+    out = migrations.migrate_3_to_4(doc)
+    assert doc == snapshot
+    assert out["decaps"] == {"source_path": None, "rows": [], "distance_mode": "fixed",
+                             "sigma_mm": 0.5, "seed": 12345}
+    kept = migrations.migrate_3_to_4({"decaps": {"seed": 7, "distance_mode": "normal"}})
+    assert kept["decaps"]["seed"] == 7 and kept["decaps"]["distance_mode"] == "normal"
+    assert migrations.migrate_3_to_4({"format": "x", "schema_version": 3}) == \
+        {"format": "x", "schema_version": 3}
+
+
+def test_frozen_schema_3_fixture_loads_through_chain(tmp_path: Path):
+    """§5.8.4: the frozen schema-3 example (0.2.0, no distance keys) migrates to schema 4 with
+    the fixed distance mode and gives exactly the inputs of the current example project."""
+    fixture = Path(__file__).parent / "data" / "project_v3.spical.json"
+    raw = json.loads(fixture.read_text(encoding="utf-8"))
+    assert raw["schema_version"] == 3
+    assert not {"distance_mode", "sigma_mm", "seed"} & set(raw["decaps"])
+    project, issues = load_project(fixture)
+    assert "I_PROJECT_MIGRATED" in _codes(issues)
+    assert "W_PROJECT_UNKNOWN_KEY" not in _codes(issues)
+    assert project.migrated_from == 3
+    assert project.distance.mode == "fixed" and project.distance.sigma_mm == 0.5 \
+        and project.distance.seed == 12345
+    current, _ = load_project(Path(__file__).parent.parent / "examples"
+                              / "example_project.spical.json")
+    assert project.distance == current.distance
+    assert (project.layers, project.vias, project.advanced, project.pwr_rows, project.sweep,
+            project.display) == (current.layers, current.vias, current.advanced,
+                                 current.pwr_rows, current.sweep, current.display)
+    assert [(r.count, r.distance_mm, r.dummy) for r in project.decap_rows] == \
+        [(r.count, r.distance_mm, r.dummy) for r in current.decap_rows]
+    doc = project_to_dict(project, str(tmp_path), None)
+    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 4
+    assert list(doc["decaps"]) == ["source_path", "distance_mode", "sigma_mm", "seed", "rows"]
+
+
+def test_distance_settings_round_trip_and_bad_values(tmp_path: Path):
+    project = _sample_project(tmp_path)
+    project.distance.mode = "normal"
+    project.distance.sigma_mm = 0.25
+    project.distance.seed = 987
+    path = tmp_path / "dist.spical.json"
+    save_project(project, path)
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    assert (doc["decaps"]["distance_mode"], doc["decaps"]["sigma_mm"], doc["decaps"]["seed"]) \
+        == ("normal", 0.25, 987)
+    loaded, issues = load_project(path)
+    assert loaded == project and not issues
+    doc["decaps"].update(distance_mode="uniform", sigma_mm=-1, seed=-5)
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    loaded, issues = load_project(path)
+    assert loaded.distance.mode == "fixed" and loaded.distance.sigma_mm == 0.5 \
+        and loaded.distance.seed == 12345
+    assert sorted(i.location for i in issues if i.code == "W_PROJECT_VALUE") == \
+        ["decaps.distance_mode", "decaps.seed", "decaps.sigma_mm"]
 
 
 def test_migration_missing_step(monkeypatch):

@@ -16,6 +16,7 @@ from simple_pi_calculator.constants import (F_START_MIN_HZ, F_STOP_MAX_HZ, F_STO
                                             MARKER_FREQUENCIES_HZ, N_POINTS_MAX, N_POINTS_MIN)
 from simple_pi_calculator.core.cavity import CancelledError, CavityCache
 from simple_pi_calculator.core.decap_model import DecapModelCache
+from simple_pi_calculator.core.distribution import DistanceDistribution, sample_row_distances
 from simple_pi_calculator.core.parallel import blas_limited, resolve_workers
 from simple_pi_calculator.core.pdn import (STAGE_DYNAMIC, STAGE_REDUCE, STAGE_STATIC, DecapGroup,
                                            PwrResult, PwrSpec, compute_pwr)
@@ -36,6 +37,8 @@ __all__ = [
     "default_model_cache",
     "default_cavity_cache",
     "CavityCache",
+    "DistanceDistribution",
+    "sample_project_distances",
 ]
 
 
@@ -60,6 +63,8 @@ class ProjectInputs:
     marker_f_hz: tuple[float, ...] = field(default=MARKER_FREQUENCIES_HZ)
     #: worker threads (``advanced.workers``); 0 = auto = os.cpu_count() (§3.9)
     workers: int = 0
+    #: decap distance distribution (``decaps.distance_mode`` / ``sigma_mm`` / ``seed``, §2.5.5)
+    distance: DistanceDistribution = field(default_factory=DistanceDistribution)
 
 
 _DEFAULT_CACHE = DecapModelCache()
@@ -86,6 +91,22 @@ def enabled_rows_for_pwr(rows: Sequence[DecapRow], pwr_name: str) -> list[DecapR
     return [r for r in rows if r.enabled and r.pwr_name == pwr_name]
 
 
+def sample_project_distances(rows: Sequence[DecapRow], distance: DistanceDistribution | None
+                             ) -> dict[int, tuple[float, ...]]:
+    """Sampled per-port distances [m] keyed by the index of the row in ``rows`` (§2.5.5).
+
+    One generator for the whole decap table: every enabled row, in table order, draws P_k
+    samples (one per via set). Empty for ``fixed`` mode. The GUI placement preview uses the same
+    function, so the preview shows exactly the computed geometry.
+    """
+    if distance is None or distance.is_fixed or distance.validate():
+        return {}
+    idx = [i for i, r in enumerate(rows) if r.enabled]
+    drawn = sample_row_distances([(int(rows[i].count), float(rows[i].distance_m),
+                                   bool(rows[i].dummy)) for i in idx], distance)
+    return {i: d for i, d in zip(idx, drawn) if d is not None}
+
+
 # =============================================================================================
 # Validation
 # =============================================================================================
@@ -104,6 +125,8 @@ def _validate_global(inputs: ProjectInputs, issues: IssueCollector) -> None:
         issues.error("E_SWEEP_RANGE", f"Number of points {n} outside [{N_POINTS_MIN}, "
                      f"{N_POINTS_MAX}].", "Sweep")
     validate_via_settings(inputs.vias, issues, "Vias")
+    for code, message in getattr(inputs, "distance", DistanceDistribution()).validate():
+        issues.error(code, message, "Decaps")
     names: set[str] = set()
     for p in inputs.pwrs:
         if p.name in names:
@@ -165,8 +188,12 @@ def validate_inputs(inputs: ProjectInputs) -> list[Issue]:
 def _net_task(inputs: ProjectInputs, pwr: PwrSpec, grid: np.ndarray, cache: DecapModelCache,
               cavity_cache: CavityCache | None, inner_workers: int,
               progress: Callable[[float], None], stage_text: Callable[[str], None],
-              cancel: Callable[[], bool] | None) -> tuple[PwrResult | None, list[Issue]]:
-    """Compute one PWR net with per-net error isolation (§5.2); raises CancelledError only."""
+              cancel: Callable[[], bool] | None,
+              sampled: dict[int, tuple[float, ...]] | None = None
+              ) -> tuple[PwrResult | None, list[Issue]]:
+    """Compute one PWR net with per-net error isolation (§5.2); raises CancelledError only.
+
+    ``sampled``: per-port distances keyed by the row's id (§2.5.5)."""
     pwr_issues = IssueCollector()
     result = None
     try:
@@ -178,7 +205,8 @@ def _net_task(inputs: ProjectInputs, pwr: PwrSpec, grid: np.ndarray, cache: Deca
             mode = row.s2p_mode or inputs.s2p_default_mode
             model = cache.get(path, row.subckt, mode, pwr_issues)  # type: ignore[arg-type]
             groups.append(DecapGroup(pwr_name=pwr.name, model=model, count=int(row.count),
-                                     distance_m=float(row.distance_m), dummy=bool(row.dummy)))
+                                     distance_m=float(row.distance_m), dummy=bool(row.dummy),
+                                     port_distances_m=(sampled or {}).get(id(row))))
 
         def sub(frac: float) -> None:
             stage_text("decap models" if frac < STAGE_STATIC else
@@ -189,7 +217,8 @@ def _net_task(inputs: ProjectInputs, pwr: PwrSpec, grid: np.ndarray, cache: Deca
         result = compute_pwr(inputs.stackup, pwr, groups, inputs.vias, grid,
                              list(inputs.marker_f_hz), inputs.show_plane_only, pwr_issues,
                              progress=sub, cancel=cancel, workers=inner_workers,
-                             cavity_cache=cavity_cache)
+                             cavity_cache=cavity_cache,
+                             distance=getattr(inputs, "distance", None))
     except CancelledError:
         raise
     except InputError as exc:
@@ -255,6 +284,11 @@ def compute_project(inputs: ProjectInputs,
 
     grid = frequency_grid(inputs)
     pwrs = list(inputs.pwrs)
+    # §2.5.5: one random stream per computation over the whole decap table, drawn up front so that
+    # the samples do not depend on the PWR order, the thread count or failures of other nets
+    sampled = {id(inputs.decap_rows[i]): d for i, d in
+               sample_project_distances(inputs.decap_rows,
+                                        getattr(inputs, "distance", None)).items()}
     n_pwr = max(1, len(pwrs))
     fracs = [0.0] * len(pwrs)
     texts = [""] * len(pwrs)
@@ -287,7 +321,7 @@ def compute_project(inputs: ProjectInputs,
                     raise CancelledError("computation cancelled")
                 prog, text = make_progress(ip)
                 outcomes.append(_net_task(inputs, pwr, grid, cache, cavity_cache, inner,
-                                          prog, text, cancel))
+                                          prog, text, cancel, sampled))
         else:
             stop = threading.Event()
 
@@ -305,7 +339,7 @@ def compute_project(inputs: ProjectInputs,
                 prog, text = make_progress(ip)
                 try:
                     return _net_task(inputs, pwrs[ip], grid, cache, cavity_cache, inner,
-                                     prog, text, poll)
+                                     prog, text, poll, sampled)
                 except CancelledError:
                     stop.set()
                     raise

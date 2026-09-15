@@ -109,13 +109,13 @@ forward slashes. Named project files never contain window/session data.</p>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="30%">Key</th><th>Content</th></tr>
 <tr><td><code>format</code></td><td>Always <code>"simple-pi-calculator-project"</code>.</td></tr>
-<tr><td><code>schema_version</code></td><td>File format version (currently 3).</td></tr>
+<tr><td><code>schema_version</code></td><td>File format version (currently 4).</td></tr>
 <tr><td><code>app_version</code></td><td>Program version that wrote the file.</td></tr>
 <tr><td><code>stackup</code></td><td><code>source_path</code> and <code>layers[]</code> with <code>number, name, thickness_mm, conductivity_s_per_m, dk, df</code> (null for empty).</td></tr>
 <tr><td><code>vias</code></td><td><code>drill_diameter_mm</code> (0.2), <code>antipad_diameter_mm</code> (0.5), <code>via_pitch_mm</code> (1.0), <code>vias_per_pad</code> (1, parallel vias on each decap pad), <code>pad_via_count</code> (1, PWR/GND via pairs per observation PAD).</td></tr>
 <tr><td><code>advanced</code></td><td><code>via_model</code> ("pair"), <code>plating_thickness_mm</code> (0.025), <code>via_conductivity_s_per_m</code> (5.8e7), <code>mounting_inductance_nh</code> (0), <code>s2p_default_mode</code> ("series"), <code>model_search_dir</code> (null).</td></tr>
 <tr><td><code>pwr</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>name, pwr_layer, gnd_layer, width_mm, n_pads, enabled</code> (<code>n_pads</code> = Number of PADs, default 1). The height is never stored (derived).</td></tr>
-<tr><td><code>decaps</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>pwr_name, model_file, count, distance_mm, dummy, subckt, s2p_mode, enabled</code>.</td></tr>
+<tr><td><code>decaps</code></td><td><code>source_path</code>, the global distance distribution <code>distance_mode</code> (<code>"fixed"</code> or <code>"normal"</code>, default fixed), <code>sigma_mm</code> (σ, default 0.5) and <code>seed</code> (integer, default 12345) – see <a href="input_decaps.html#distribution">Distance distribution</a> – and <code>rows[]</code> with <code>pwr_name, model_file, count, distance_mm, dummy, subckt, s2p_mode, enabled</code>.</td></tr>
 <tr><td><code>sweep</code></td><td><code>f_start_hz</code> (1e5), <code>f_stop_hz</code> (1e9), <code>n_points</code> (400), <code>show_plane_only</code> (false).</td></tr>
 <tr><td><code>display</code></td><td><code>z_unit</code>: "ohm", "mohm" (default) or "uohm".</td></tr>
 <tr><td><code>session</code></td><td>Only in the auto-save file (window and plot state); ignored with an info message if found in a named file.</td></tr>
@@ -126,7 +126,7 @@ forward slashes. Named project files never contain window/session data.</p>
 <pre>
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 3,
+  "schema_version": 4,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -141,7 +141,8 @@ forward slashes. Named project files never contain window/session data.</p>
                "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null},
   "pwr": {"source_path": "pwr_list.xlsx", "rows": [
     {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "n_pads": 1, "enabled": true}]},
-  "decaps": {"source_path": "decap_list.xlsx", "rows": [
+  "decaps": {"source_path": "decap_list.xlsx", "distance_mode": "fixed", "sigma_mm": 0.5,
+             "seed": 12345, "rows": [
     {"pwr_name": "VDD_CORE", "model_file": "cap_0402_100nF.mod", "count": 10, "distance_mm": 8,
      "dummy": false, "subckt": null, "s2p_mode": null, "enabled": true}]},
   "sweep": {"f_start_hz": 1e5, "f_stop_hz": 1e9, "n_points": 400, "show_plane_only": false},
@@ -161,6 +162,8 @@ untouched until you save, and on that first save the original is kept as
 unchanged.</li>
 <li>Schema 2 → 3: every PWR row gets <code>n_pads</code> (Number of PADs) = 1, because schema 2 had exactly one PAD per
 net. Results are unchanged.</li>
+<li>Schema 3 → 4: the <code>decaps</code> block gets <code>distance_mode</code> = <code>"fixed"</code>,
+<code>sigma_mm</code> = 0.5 and <code>seed</code> = 12345. Fixed mode is the 0.2.0 behaviour, so results are unchanged.</li>
 <li>A file written by a <b>newer</b> program version cannot be opened (<code>E_PROJECT_NEWER</code>); update the program.</li>
 </ul>
 

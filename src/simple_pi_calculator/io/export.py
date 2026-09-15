@@ -100,6 +100,18 @@ def result_n_pads(result: Any) -> int:
     return int(getattr(getattr(result, "placement", None), "n_pads", 1) or 1)
 
 
+def distance_summary_line(result: Any) -> str:
+    """One-line description of the decap distance distribution of a result (§2.5.5, §4.8)."""
+    dist = getattr(result, "distance", None)
+    if dist is None or getattr(dist, "mode", "fixed") == "fixed":
+        return "Distance distribution: fixed (every capacitor at its row distance)"
+    values = [float(d) for _, _, d in (getattr(result, "sampled_distances", None) or [])]
+    stats = (f"sampled min/mean/max = {min(values):.4f}/{sum(values) / len(values):.4f}/"
+             f"{max(values):.4f} mm over {len(values)} via set(s)") if values else "no decap ports"
+    return (f"Distance distribution: normal truncated to +/-1 sigma, sigma = "
+            f"{float(dist.sigma_m) * 1e3:.6g} mm, seed = {int(dist.seed)}; {stats}")
+
+
 def marker_readouts(result: Any) -> list[tuple[float, float]]:
     """``(f_marker, |Z|)`` pairs of the exact marker values."""
     f = np.asarray(getattr(result, "marker_f_hz", []), dtype=float)
@@ -124,6 +136,7 @@ def _header_lines(result: Any, stem: str) -> list[str]:
              f"Project: {stem}",
              f"PWR: {result.name}",
              f"Number of PADs: {result_n_pads(result)}",
+             distance_summary_line(result),
              f"Exported (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}"]
     for f, zabs in marker_readouts(result):
         lines.append(f"|Z| @ {f:.6g} Hz = {_fmt(zabs)} Ohm")
@@ -195,6 +208,7 @@ def export_csv_combined(results: Sequence[Any], path: str, stem: str = "results"
         fh.write(f"# Exported (UTC): {_utc_now()}\n")
         for res in results:
             fh.write(f"# {res.name}: Number of PADs = {result_n_pads(res)}\n")
+            fh.write(f"# {res.name}: {distance_summary_line(res)}\n")
             for f, zabs in marker_readouts(res):
                 fh.write(f"# {res.name}: |Z| @ {f:.6g} Hz = {_fmt(zabs)} Ohm\n")
         writer = csv.writer(fh)
@@ -266,6 +280,7 @@ def _touchstone_comments(results: Sequence[Any], stem: str, options: TouchstoneO
     for k, res in enumerate(results, start=1):
         lines.append(f"Port {k}: PWR {res.name}" if combined else f"PWR: {res.name}")
         lines.append(f"  Number of PADs: {result_n_pads(res)} (joined at an ideal common node)")
+        lines.append(f"  {distance_summary_line(res)}")
         lines.extend(geometry_summary(project, res.name))
         info = getattr(res, "info", None) or {}
         if info:
@@ -353,6 +368,9 @@ def export_xlsx(results: Sequence[Any], path: str, project: "Project | None") ->
             summary.append([result.name, f, zabs, _fmt(zabs)])
     summary.append([])
     for result in results:
+        summary.append([result.name, distance_summary_line(result)])
+    summary.append([])
+    for result in results:
         info = getattr(result, "info", None) or {}
         if info:
             summary.append([f"{result.name} info"])
@@ -375,4 +393,4 @@ def export_xlsx(results: Sequence[Any], path: str, project: "Project | None") ->
 __all__ = ["export_csv", "export_csv_combined", "combined_csv_rows", "export_xlsx",
            "sheet_name_for", "safe_file_name", "result_rows", "marker_readouts", "project_digest",
            "TouchstoneOptions", "export_touchstone_per_pwr", "export_touchstone_combined",
-           "touchstone_combined_path", "geometry_summary"]
+           "touchstone_combined_path", "geometry_summary", "distance_summary_line"]

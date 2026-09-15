@@ -106,7 +106,7 @@ background; hover for the message. Errors in one PWR net never stop the computat
 <h3><a name="decap"></a>Decap rows and placement</h3>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
-<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>Model file not found.</td><td rowspan="9"><a href="input_decaps.html#messages">Decap list</a></td></tr>
+<tr><td><code>E_DECAP_FILE_NOT_FOUND</code></td><td>Model file not found.</td><td rowspan="14"><a href="input_decaps.html#messages">Decap list</a></td></tr>
 <tr><td><code>E_DECAP_FILE_READ</code></td><td>Model file exists but cannot be read.</td></tr>
 <tr><td><code>E_DECAP_FILE_TYPE</code></td><td>Unsupported model file extension.</td></tr>
 <tr><td><code>E_DECAP_DISTANCE</code></td><td>Distance to PAD ≤ 0.</td></tr>
@@ -115,6 +115,11 @@ background; hover for the message. Errors in one PWR net never stop the computat
 <tr><td><code>W_DECAP_CLIPPED</code></td><td>Sub-rows extend beyond the plane; ports moved to the edge.</td></tr>
 <tr><td><code>W_PORT_OVERLAP</code></td><td>Two ports overlap.</td></tr>
 <tr><td><code>I_DUMMY_SINGLE</code></td><td>Dummy Cap on a single capacitor: no effect.</td></tr>
+<tr><td><code>I_DIST_SAMPLED</code></td><td>Summary of the sampled distances (normal distribution).</td></tr>
+<tr><td><code>W_DIST_SIGMA_LARGE</code></td><td>σ not smaller than a row distance.</td></tr>
+<tr><td><code>E_DIST_SIGMA</code></td><td>Distance σ ≤ 0 or not finite.</td></tr>
+<tr><td><code>E_DIST_SEED</code></td><td>Seed not an integer 0 … 2147483647.</td></tr>
+<tr><td><code>E_DIST_MODE</code></td><td>Unknown distance distribution mode.</td></tr>
 </table>
 
 <h3><a name="via"></a>Vias</h3>

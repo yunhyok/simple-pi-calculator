@@ -14,7 +14,7 @@ from typing import Callable
 
 from simple_pi_calculator.errors import IssueCollector, ProjectFormatError, ProjectTooNewError
 
-CURRENT_SCHEMA_VERSION: int = 3
+CURRENT_SCHEMA_VERSION: int = 4
 
 
 def migrate_1_to_2(doc: dict) -> dict:
@@ -51,7 +51,23 @@ def migrate_2_to_3(doc: dict) -> dict:
     return out
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3}
+def migrate_3_to_4(doc: dict) -> dict:
+    """Schema 3 → 4: the ``decaps`` block gets the distance distribution (§2.5.5)
+    ``distance_mode = "fixed"``, ``sigma_mm = 0.5`` and ``seed = 12345``. Fixed mode is the
+    schema-3 behaviour, so every schema-3 project computes identically. Existing keys and a
+    malformed ``decaps`` value are left untouched for the reader.
+    """
+    out = copy.deepcopy(doc)
+    decaps = out.get("decaps")
+    if isinstance(decaps, dict):
+        decaps.setdefault("distance_mode", "fixed")
+        decaps.setdefault("sigma_mm", 0.5)
+        decaps.setdefault("seed", 12345)
+    return out
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3,
+                                                 3: migrate_3_to_4}
 
 
 def schema_version_of(doc: dict) -> int:
@@ -92,6 +108,6 @@ def migrate(doc: dict, issues: IssueCollector) -> dict:
     return out
 
 
-__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "migrate_1_to_2", "migrate_2_to_3",
+__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "migrate_1_to_2", "migrate_2_to_3", "migrate_3_to_4",
            "schema_version_of",
            "ProjectFormatError", "ProjectTooNewError"]

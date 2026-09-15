@@ -32,6 +32,11 @@ from PySide6.QtWidgets import (
 )
 
 from simple_pi_calculator.constants import (
+    DEFAULT_DISTANCE_SEED,
+    DEFAULT_DISTANCE_SIGMA_MM,
+    DISTANCE_SEED_MAX,
+    DISTANCE_SIGMA_MAX_MM,
+    DISTANCE_SIGMA_MIN_MM,
     F_START_MIN_HZ,
     F_STOP_MAX_HZ,
     MAX_N_PADS,
@@ -567,6 +572,8 @@ class DecapModelPreviewDialog(QDialog):
 class DecapPanel(QWidget):
     importRequested = Signal()
     filterChanged = Signal(object)  # str | None
+    #: the global distance distribution (mode, σ or seed) was changed by the user (§2.5.5)
+    edited = Signal()
 
     def __init__(self, model: DecapTableModel, pwr_names: Callable[[], list[str]],
                  start_dir: Callable[[], str], parent: QWidget | None = None):
@@ -590,6 +597,48 @@ class DecapPanel(QWidget):
             top.addWidget(b)
         top.addStretch(1)
         layout.addLayout(top)
+
+        # global distance distribution (§2.5.5, §5.5): applies to every decap row
+        self._project: Any = None
+        dist = QHBoxLayout()
+        dist.addWidget(QLabel("Distance:", self))
+        self.distance_mode = QComboBox(self)
+        self.distance_mode.addItem("Fixed", "fixed")
+        self.distance_mode.addItem("Normal (±1σ)", "normal")
+        self.distance_mode.setToolTip(
+            "Distance distribution of the capacitors of every decap row.\n"
+            "Fixed: every via set at exactly 'Distance to PAD' (0.2.0 behaviour).\n"
+            "Normal (±1σ): each via set at D + σ·z, z drawn from a standard normal distribution "
+            "truncated to ±1,\nso all distances lie in [D − σ, D + σ]; reproducible for a given "
+            "seed. A Dummy Cap via set\n(two capacitors) gets one sample.")
+        dist.addWidget(self.distance_mode)
+        self.sigma_label = QLabel("σ (mm)", self)
+        dist.addWidget(self.sigma_label)
+        self.sigma = _dspin(self, DISTANCE_SIGMA_MIN_MM, DISTANCE_SIGMA_MAX_MM, 3, 0.05)
+        self.sigma.setValue(DEFAULT_DISTANCE_SIGMA_MM)
+        self.sigma.setToolTip("Standard deviation σ of the distance distribution (absolute, mm). "
+                              "Samples are truncated to ±1σ.")
+        dist.addWidget(self.sigma)
+        self.seed_label = QLabel("Seed", self)
+        dist.addWidget(self.seed_label)
+        self.seed = QSpinBox(self)
+        self.seed.setRange(0, DISTANCE_SEED_MAX)
+        self.seed.setValue(DEFAULT_DISTANCE_SEED)
+        self.seed.setKeyboardTracking(False)
+        self.seed.setMinimumWidth(110)
+        self.seed.setToolTip("Random seed: the same seed gives the same sampled distances "
+                             "(stored in the project).")
+        dist.addWidget(self.seed)
+        self.new_seed_button = _tool_button("New seed", "Draw a new random seed", self)
+        dist.addWidget(self.new_seed_button)
+        dist.addStretch(1)
+        layout.addLayout(dist)
+        self.distance_mode.currentIndexChanged.connect(self._write_distance)
+        self.sigma.valueChanged.connect(self._write_distance)
+        self.seed.valueChanged.connect(self._write_distance)
+        self.new_seed_button.clicked.connect(self.new_seed)
+        self._update_distance_enabled()
+
         self.proxy = DecapFilterProxy(self)
         self.proxy.setSourceModel(model)
         self.table = QTableView(self)
@@ -623,6 +672,47 @@ class DecapPanel(QWidget):
         self.preview_button.clicked.connect(self.preview_selected_model)
         self.filter_combo.currentIndexChanged.connect(self._on_filter)
         self.refresh_filter_items()
+
+    # -- distance distribution (§2.5.5) -------------------------------------------------------------
+    def load(self, project: Any) -> None:
+        """Show the project's distance distribution (no ``edited`` signal)."""
+        self._project = project
+        d = project.distance
+        with QSignalBlocker(self.distance_mode), QSignalBlocker(self.sigma), \
+                QSignalBlocker(self.seed):
+            i = self.distance_mode.findData(d.mode)
+            self.distance_mode.setCurrentIndex(max(i, 0))
+            self.sigma.setValue(float(d.sigma_mm))
+            self.seed.setValue(int(d.seed))
+        self._update_distance_enabled()
+
+    def _update_distance_enabled(self) -> None:
+        normal = self.distance_mode.currentData() == "normal"
+        for w in (self.sigma_label, self.sigma, self.seed_label, self.seed,
+                  self.new_seed_button):
+            w.setEnabled(normal)
+
+    def _write_distance(self, *_args) -> None:
+        self._update_distance_enabled()
+        if self._project is None:
+            return
+        d = self._project.distance
+        new = (str(self.distance_mode.currentData() or "fixed"), float(self.sigma.value()),
+               int(self.seed.value()))
+        if (d.mode, float(d.sigma_mm), int(d.seed)) == new:
+            return
+        d.mode, d.sigma_mm, d.seed = new
+        self.edited.emit()
+
+    def new_seed(self) -> int:
+        """Set a new random seed (different from the current one) and return it."""
+        import secrets
+        current = int(self.seed.value())
+        value = current
+        while value == current:
+            value = secrets.randbelow(DISTANCE_SEED_MAX + 1)
+        self.seed.setValue(value)
+        return value
 
     # -- filter -----------------------------------------------------------------------------------
     def refresh_filter_items(self) -> None:

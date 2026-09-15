@@ -240,6 +240,7 @@ def test_autosave_from_old_schema_is_migrated(make_window, qtbot, appdata, workd
     assert {r.name for r in w.results} == {"VDD_CORE", "VDD_IO"}
     w.close()
     saved = json.loads((appdata / AutosaveStore.FILE).read_text("utf-8"))
-    assert saved["schema_version"] == 3
+    assert saved["schema_version"] == 4
+    assert saved["decaps"]["distance_mode"] == "fixed"
     assert all(r["n_pads"] == 1 for r in saved["pwr"]["rows"])
     assert "vias_per_decap" not in saved["vias"]

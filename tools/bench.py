@@ -7,6 +7,7 @@ Usage::
     python tools/bench.py --profile large_mlo  # cProfile top functions
     python tools/bench.py --save-ref ref.npz   # store full-precision results
     python tools/bench.py --check-ref ref.npz  # compare against stored results (max rel. error)
+    python tools/bench.py --distance normal    # sampled decap distances (σ 0.5 mm, seed 12345)
 
 Scenarios
 ---------
@@ -166,8 +167,16 @@ def _compute(inputs, workers, cache_state):
     return engine.compute_project(inputs, **kwargs)
 
 
-def run_scenario(name, workers, repeat, warm):
-    inputs = SCENARIOS[name]()
+def _with_distance(inputs, distance):
+    if distance is None:
+        return inputs
+    from simple_pi_calculator.core.distribution import DistanceDistribution
+    mode, sigma_mm, seed = distance
+    return dataclasses.replace(inputs, distance=DistanceDistribution(mode, sigma_mm * MM, seed))
+
+
+def run_scenario(name, workers, repeat, warm, distance=None):
+    inputs = _with_distance(SCENARIOS[name](), distance)
     best = None
     for _ in range(repeat):
         with StageTimer() as st:
@@ -265,15 +274,20 @@ def main(argv=None):
     ap.add_argument("--profile", choices=list(SCENARIOS))
     ap.add_argument("--compare-executors", action="store_true",
                     help="threads vs spawn processes for the selected scenarios")
+    ap.add_argument("--distance", choices=["fixed", "normal"], default=None,
+                    help="decap distance distribution (§2.5.5); default: scenario setting (fixed)")
+    ap.add_argument("--sigma-mm", type=float, default=0.5)
+    ap.add_argument("--seed", type=int, default=12345)
     ap.add_argument("--save-ref")
     ap.add_argument("--check-ref")
     args = ap.parse_args(argv)
     names = args.scenario or list(SCENARIOS)
+    distance = None if args.distance is None else (args.distance, args.sigma_mm, args.seed)
 
     for line in machine_info():
         print(line)
     if args.profile:
-        inputs = SCENARIOS[args.profile]()
+        inputs = _with_distance(SCENARIOS[args.profile](), distance)
         prof = cProfile.Profile()
         prof.enable()
         _compute(inputs, args.workers, None)
@@ -291,7 +305,7 @@ def main(argv=None):
     store = {}
     print(f"\n{'scenario':<11} {'wall [s]':>9}  stages [s]")
     for name in names:
-        res = run_scenario(name, args.workers, args.repeat, args.warm)
+        res = run_scenario(name, args.workers, args.repeat, args.warm, distance)
         stages = ", ".join(f"{k} {v:.3f}" for k, v in sorted(res["stages"].items()))
         warm = f", warm re-run {res['warm']:.3f}" if "warm" in res else ""
         print(f"{name:<11} {res['wall']:9.3f}  {stages}{warm}")

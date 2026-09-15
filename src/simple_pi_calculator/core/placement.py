@@ -5,6 +5,10 @@ y = 0.2·D_ref (N_pad = 1: the single PAD at (W/2, 0.2·D_ref)); each decap row 
 width at y = 0.2·D_ref + d_k. Both kinds of rows are split into several sub-rows when the ports
 would crowd. Port order (normative): pads 0 … N_pad−1 (sub-rows ascending, left to right), then decap
 rows in table order, sub-rows ascending, left to right.
+
+With a sampled distance distribution (§2.5.5) every decap port j of row k carries its own distance
+d_kj: the port keeps the x / sub-row pattern of the row and is shifted in y by d_kj − d_k, and
+D_ref = max over all ports of d_kj.
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ class DecapGroupGeom:
     count: int  # N_k ≥ 1
     distance_m: float  # d_k > 0
     dummy: bool = False  # δ_k
+    #: per-port distances d_kj [m] in port order (§2.5.5); ``None`` = all ports at ``distance_m``
+    port_distances_m: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,8 @@ class Placement:
     caps_per_port: np.ndarray  # (P-N_pad,) int ∈ {1,2}
     port_widths_m: np.ndarray  # (P,) w_pad × N_pad, then w_dec
     n_pads: int = 1  # N_pad ≥ 1 (§2.5.1)
+    #: (P-N_pad,) distance d_kj of every decap port [m] (= d_k in fixed mode, §2.5.5)
+    port_distances_m: np.ndarray | None = None
 
     @property
     def n_ports(self) -> int:
@@ -71,6 +79,13 @@ class Placement:
     def pads_xy_m(self) -> np.ndarray:
         """(N_pad, 2) pad centres."""
         return self.xy_m[:int(self.n_pads)]
+
+
+def _group_distances(g: DecapGroupGeom) -> list[float]:
+    """The distances of a row that enter D_ref: the per-port distances, else d_k."""
+    if g.port_distances_m is not None and len(g.port_distances_m):
+        return [float(d) for d in g.port_distances_m]
+    return [float(g.distance_m)]
 
 
 def plane_height(width_m: float, distances_m: Sequence[float]) -> tuple[float, float]:
@@ -132,6 +147,12 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
             errors.append(issues.error("E_DECAP_DISTANCE",
                                        f"Decap row {k + 1}: distance to PAD must be > 0 "
                                        f"(got {g.distance_m * 1e3:g} mm).", source))
+        if g.port_distances_m is not None:
+            pd = g.port_distances_m
+            if (int(g.count) >= 1 and len(pd) != ports_for_row(g.count, g.dummy)) \
+                    or not all(math.isfinite(float(d)) for d in pd):
+                raise ValueError(f"decap row {k + 1}: port_distances_m must hold one finite "
+                                 f"distance per via set (got {len(pd)})")
         if int(g.count) < 1:
             errors.append(issues.error("E_DECAP_COUNT",
                                        f"Decap row {k + 1}: number of decaps must be ≥ 1 "
@@ -142,7 +163,7 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
     if errors:
         raise InputError(errors)
 
-    H, d_ref = plane_height(W, [g.distance_m for g in groups])
+    H, d_ref = plane_height(W, [d for g in groups for d in _group_distances(g)])
     y_pad = PAD_MARGIN_FACTOR * d_ref
 
     if y_pad < 0.5 * w_pad:
@@ -202,12 +223,15 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
                            source)
     group_index: list[int] = []
     caps: list[int] = []
+    port_dist: list[float] = []
     for k, g in enumerate(groups):
         n_ports = ports_for_row(g.count, g.dummy)
         caps_k = caps_per_port_for_row(g.count, g.dummy, issues, source)
-        if g.distance_m < 0.5 * (w + w_pad):
+        sampled = g.port_distances_m
+        d_min = min(_group_distances(g))
+        if d_min < 0.5 * (w + w_pad):
             issues.warning("W_DECAP_TOO_CLOSE",
-                           f"Decap row {k + 1}: distance {g.distance_m * 1e3:.4g} mm is smaller "
+                           f"Decap row {k + 1}: distance {d_min * 1e3:.4g} mm is smaller "
                            f"than half the PAD + decap port widths; the decap port overlaps the "
                            "PAD port footprint.", source)
         y_k = y_pad + g.distance_m
@@ -218,14 +242,21 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
         for r in range(n_sub):
             n_r = min(n_row, n_ports - r * n_row)
             y_r = y_k + (r - (n_sub - 1) / 2.0) * w
-            y_c = min(max(y_r, 0.5 * w), H - 0.5 * w)
-            if abs(y_c - y_r) > _GEOM_REL_TOL * w:
-                clipped += n_r
+            if sampled is None:  # fixed mode: the 0.2.0 code path, bit-identical
+                y_c = min(max(y_r, 0.5 * w), H - 0.5 * w)
+                if abs(y_c - y_r) > _GEOM_REL_TOL * w:
+                    clipped += n_r
             for i in range(n_r):
+                if sampled is not None:  # §2.5.5: shift the port by d_kj − d_k
+                    y_j = y_r + (float(sampled[j]) - g.distance_m)
+                    y_c = min(max(y_j, 0.5 * w), H - 0.5 * w)
+                    if abs(y_c - y_j) > _GEOM_REL_TOL * w:
+                        clipped += 1
                 xs.append(m_x + (i + 0.5) * l_x / n_r)
                 ys.append(y_c)
                 group_index.append(k)
                 caps.append(caps_k[j])
+                port_dist.append(g.distance_m if sampled is None else float(sampled[j]))
                 j += 1
         if clipped:
             issues.warning("W_DECAP_CLIPPED",
@@ -253,4 +284,5 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
     return Placement(width_m=W, height_m=H, d_ref_m=d_ref, xy_m=xy,
                      group_index=np.asarray(group_index, dtype=int),
                      caps_per_port=np.asarray(caps, dtype=int),
-                     port_widths_m=widths, n_pads=n_pad)
+                     port_widths_m=widths, n_pads=n_pad,
+                     port_distances_m=np.asarray(port_dist, dtype=float))

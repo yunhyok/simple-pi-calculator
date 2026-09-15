@@ -82,6 +82,14 @@ DEFAULT_S2P_MODE: str = "series"
 DEFAULT_WORKERS: int = 0  #: compute worker threads, 0 = auto = os.cpu_count() (§3.9)
 MAX_WORKERS: int = 256
 S2P_MODES: tuple[str, ...] = ("series", "shunt")
+#: decap distance distribution (§2.5.5, schema 4): mode, σ [mm] and random seed
+DISTANCE_MODES: tuple[str, ...] = ("fixed", "normal")
+DEFAULT_DISTANCE_MODE: str = "fixed"
+DEFAULT_DISTANCE_SIGMA_MM: float = 0.5
+DISTANCE_SIGMA_MIN_MM: float = 0.01  #: GUI spin-box range (the core accepts any σ > 0)
+DISTANCE_SIGMA_MAX_MM: float = 50.0
+DEFAULT_DISTANCE_SEED: int = 12345
+DISTANCE_SEED_MAX: int = 2**31 - 1  #: seeds are integers 0 … 2³¹−1
 DEFAULT_Z_UNIT: str = "mohm"
 Z_UNITS: tuple[str, ...] = ("ohm", "mohm", "uohm")
 

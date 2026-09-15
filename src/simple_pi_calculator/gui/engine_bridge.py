@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
 
@@ -108,6 +109,14 @@ class PreviewPlacement:
     group_index: np.ndarray     # (P-N_pad,)
     issues: list[Issue] = field(default_factory=list)
     n_pads: int = 1
+    #: (P-N_pad,) distance of every decap port [m] (§2.5.5); ``None`` = row distances unknown
+    port_distances_m: np.ndarray | None = None
+    #: distance distribution shown: "fixed" or "normal", with σ [mm] and seed
+    distance_mode: str = "fixed"
+    sigma_mm: float = 0.0
+    seed: int = 0
+    #: label of each decap row k of this PWR (e.g. "row 3: cap.mod"), index = group index
+    row_labels: list[str] = field(default_factory=list)
 
     @property
     def n_decap_ports(self) -> int:
@@ -267,6 +276,21 @@ class EngineBridge:
             return None
         rows = [r for r in self.enabled_groups(project, pwr.name)
                 if r.count >= 1 and r.distance_mm > 0]
+        # §2.5.5: the same samples as the computation (one stream over the whole decap table)
+        dist_cfg = getattr(project, "distance", None)
+        mode = str(getattr(dist_cfg, "mode", "fixed"))
+        sampled: dict[int, tuple[float, ...]] = {}
+        dmod = _optional_module("simple_pi_calculator.core.distribution")
+        eng = _optional_module(self.ENGINE_MODULE) if mode == "normal" else None
+        normal = mode == "normal" and dmod is not None and eng is not None
+        if normal:
+            dist = dmod.DistanceDistribution(mode, float(dist_cfg.sigma_mm) * MM,
+                                             int(dist_cfg.seed))
+            by_index = eng.sample_project_distances(project.decap_rows, dist)
+            sampled = {id(project.decap_rows[i]): d for i, d in by_index.items()}
+        table_index = {id(r): i for i, r in enumerate(project.decap_rows)}
+        labels = [f"row {table_index.get(id(r), -1) + 1}: {os.path.basename(r.model_file)}"
+                  for r in rows]
         try:
             w_pad, w_dec = self.port_widths_m(project)
         except (ValueError, ZeroDivisionError, OverflowError):
@@ -280,7 +304,9 @@ class EngineBridge:
         if mod is not None and hasattr(mod, "place_ports") and hasattr(mod, "DecapGroupGeom"):
             try:
                 groups = [mod.DecapGroupGeom(count=int(r.count), distance_m=r.distance_mm * MM,
-                                             dummy=bool(r.dummy)) for r in rows]
+                                             dummy=bool(r.dummy),
+                                             port_distances_m=sampled.get(id(r)))
+                          for r in rows]
                 pl = mod.place_ports(width_m, groups, w_dec, w_pad, issues, source,
                                      n_pads=n_pads)
                 return PreviewPlacement(
@@ -290,7 +316,12 @@ class EngineBridge:
                                        [w_pad] + [w_dec] * (len(pl.xy_m) - 1)), dtype=float),
                     np.asarray(pl.caps_per_port, dtype=int),
                     np.asarray(pl.group_index, dtype=int), list(issues.issues),
-                    int(getattr(pl, "n_pads", 1)))
+                    int(getattr(pl, "n_pads", 1)),
+                    port_distances_m=getattr(pl, "port_distances_m", None),
+                    distance_mode="normal" if normal else "fixed",
+                    sigma_mm=float(getattr(dist_cfg, "sigma_mm", 0.0)) if normal else 0.0,
+                    seed=int(getattr(dist_cfg, "seed", 0)) if normal else 0,
+                    row_labels=labels)
             except InputError:
                 return None
             except Exception:  # noqa: BLE001 - fall back to the local formulas

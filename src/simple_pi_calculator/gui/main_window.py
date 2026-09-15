@@ -480,6 +480,8 @@ class MainWindow(QMainWindow):
         self.via_panel.edited.connect(self.on_inputs_changed)
         self.via_panel.edited.connect(self._refresh_derived)
         self.sweep_panel.edited.connect(self.on_inputs_changed)
+        self.decap_panel.edited.connect(self.on_inputs_changed)
+        self.decap_panel.edited.connect(self._refresh_derived)
         self.sweep_panel.planeOnlyToggled.connect(self._sync_plane_only_action)
         self.stackup_panel.importRequested.connect(lambda: self.import_stackup())
         self.stackup_panel.reimportRequested.connect(self.reimport_stackup)
@@ -508,6 +510,7 @@ class MainWindow(QMainWindow):
             self.decap_model.set_project(self.project)
             self.via_panel.load(self.project)
             self.sweep_panel.load(self.project)
+            self.decap_panel.load(self.project)
             self.stackup_panel.set_source_path(self.project.stackup_source_path)
             self.pwr_panel.source_label.setText(
                 os.path.basename(self.project.pwr_source_path or ""))

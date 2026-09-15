@@ -1,6 +1,6 @@
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 4,
+  "schema_version": 3,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -134,9 +134,6 @@
   },
   "decaps": {
     "source_path": "decap_list.xlsx",
-    "distance_mode": "fixed",
-    "sigma_mm": 0.5,
-    "seed": 12345,
     "rows": [
       {
         "pwr_name": "VDD_CORE",

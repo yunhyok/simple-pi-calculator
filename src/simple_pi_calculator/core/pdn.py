@@ -13,6 +13,8 @@ from simple_pi_calculator.constants import RCOND_MIN, SCHUR_CHUNK_BYTES
 from simple_pi_calculator.core.cavity import (CancelledError, CavityCache, CavityModel,
                                               ModeSettings, cavity_cache_key, cluster_port_width)
 from simple_pi_calculator.core.decap_model import DecapModel, evaluate_impedance
+from simple_pi_calculator.core.distribution import (DistanceDistribution, distance_summary,
+                                                    sample_row_distances)
 from simple_pi_calculator.core.parallel import (CHUNK_TARGET_BYTES, blas_limited, plan_chunks,
                                                 resolve_workers, run_chunks)
 from simple_pi_calculator.core.placement import DecapGroupGeom, Placement, place_ports
@@ -51,6 +53,8 @@ class DecapGroup:
     count: int
     distance_m: float
     dummy: bool = False
+    #: sampled per-port distances d_kj [m] (§2.5.5); ``None`` = all ports at ``distance_m``
+    port_distances_m: tuple[float, ...] | None = None
 
 
 @dataclass
@@ -65,6 +69,15 @@ class PwrResult:
     info: dict[str, float | int | str] = field(default_factory=dict)
     issues: list[Issue] = field(default_factory=list)
     marker_z_plane_only: np.ndarray | None = None  # extension: exact plane-only marker values
+    #: distance distribution used (§2.5.5); ``None`` = fixed
+    distance: DistanceDistribution | None = None
+    #: (row index k, port index j within the row, distance in mm) of every decap port (§2.5.5);
+    #: k indexes the enabled rows of this PWR in table order (``placement.group_index``)
+    sampled_distances: list[tuple[int, int, float]] = field(default_factory=list)
+
+    @property
+    def distance_mode(self) -> str:
+        return "fixed" if self.distance is None else self.distance.mode
 
     @property
     def n_pads(self) -> int:
@@ -386,17 +399,23 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                 cancel: Callable[[], bool] | None = None,
                 settings: ModeSettings = ModeSettings(),
                 workers: int | None = 1,
-                cavity_cache: CavityCache | None = None) -> PwrResult:
+                cavity_cache: CavityCache | None = None,
+                distance: DistanceDistribution | None = None) -> PwrResult:
     """Z at the PAD of one PWR net (§2.8). Errors are added to ``issues`` and raised as
     :class:`InputError`; cancellation raises :class:`CancelledError`.
 
     ``workers`` threads evaluate frequency chunks (0 / None = auto, §3.9); ``cavity_cache``
     memoises the cavity Z-matrix across calls. Neither changes the result.
+
+    ``distance`` (§2.5.5): ``None`` or ``fixed`` places every port of a row at its distance. In
+    ``normal`` mode groups whose ``port_distances_m`` is ``None`` are sampled here with one
+    generator over ``groups`` in order (``compute_project`` pre-samples over the whole decap
+    table instead).
     """
     with blas_limited(1):
         return _compute_pwr(stackup, pwr, groups, vias, f_grid_hz, marker_f_hz, want_plane_only,
                             issues, progress, cancel, settings, resolve_workers(workers),
-                            cavity_cache)
+                            cavity_cache, distance)
 
 
 #: progress fractions of the stages of :func:`compute_pwr` (start of each stage)
@@ -409,7 +428,8 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                  progress: Callable[[float], None] | None,
                  cancel: Callable[[], bool] | None,
                  settings: ModeSettings, workers: int,
-                 cavity_cache: CavityCache | None) -> PwrResult:
+                 cavity_cache: CavityCache | None,
+                 distance: DistanceDistribution | None = None) -> PwrResult:
     source = f"PWR:{pwr.name}"
     n_before = len(issues.issues)
     last = [0.0]
@@ -460,12 +480,50 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     if not groups:
         issues.warning("W_PWR_NO_DECAPS", f"PWR {pwr.name} has no enabled decap rows: square "
                        "plane H = W, plane-only result.", source)
-    geoms = [DecapGroupGeom(count=int(g.count), distance_m=float(g.distance_m), dummy=bool(g.dummy))
-             for g in groups]
+    if distance is not None and distance.is_fixed and distance.mode == "fixed":
+        distance = None
+    if distance is not None:
+        bad = distance.validate()
+        if bad:
+            errs = [issues.error(code, msg, source) for code, msg in bad]
+            raise InputError(errs)
+    port_dists: list[tuple[float, ...] | None] = [
+        None if g.port_distances_m is None else tuple(float(d) for d in g.port_distances_m)
+        for g in groups]
+    if distance is not None and any(d is None for d in port_dists):
+        drawn = sample_row_distances([(int(g.count), float(g.distance_m), bool(g.dummy))
+                                      for g in groups], distance)
+        port_dists = [d if d is not None else s for d, s in zip(port_dists, drawn)]
+    if distance is not None:
+        for k, g in enumerate(groups):
+            if float(distance.sigma_m) >= float(g.distance_m) > 0.0:
+                issues.warning("W_DIST_SIGMA_LARGE",
+                               f"Decap row {k + 1}: σ = {distance.sigma_m * 1e3:.4g} mm is not "
+                               f"smaller than the distance {g.distance_m * 1e3:.4g} mm; sampled "
+                               "ports can reach the PAD row or the plane edge.", source)
+    geoms = [DecapGroupGeom(count=int(g.count), distance_m=float(g.distance_m), dummy=bool(g.dummy),
+                            port_distances_m=pd)
+             for g, pd in zip(groups, port_dists)]
     placement = place_ports(pwr.width_m, geoms, w_dec, w_pad, issues, source,
                             n_pads=getattr(pwr, "n_pads", 1))
     n_pads = placement.n_pads
     a, b = placement.width_m, placement.height_m
+    sampled: list[tuple[int, int, float]] = []
+    if placement.port_distances_m is not None:
+        j_in_row: dict[int, int] = {}
+        for k, d in zip(placement.group_index.tolist(), placement.port_distances_m.tolist()):
+            j = j_in_row.get(k, 0)
+            j_in_row[k] = j + 1
+            sampled.append((int(k), j, float(d) * 1e3))
+    if distance is not None:
+        summ = distance_summary([d for _, _, d in sampled])
+        text = ("no decap ports" if summ is None else
+                f"min/mean/max = {summ[0]:.4f}/{summ[1]:.4f}/{summ[2]:.4f} mm over "
+                f"{len(sampled)} via set(s)")
+        issues.info("I_DIST_SAMPLED",
+                    f"PWR {pwr.name}: decap distances sampled from a normal distribution "
+                    f"truncated to ±1σ (σ = {distance.sigma_m * 1e3:.4g} mm, seed "
+                    f"{int(distance.seed)}): {text}.", source)
     c_plane = pair.plane_capacitance(a, b)
 
     # 4. cavity (Z-matrix cache keyed by geometry, plane pair, ports, sweep and mode settings)
@@ -473,7 +531,10 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     cached = None
     if cavity_cache is not None:
         ckey = cavity_cache_key(a, b, pair, placement.xy_m, placement.port_widths_m, f_eval,
-                                settings, n_pads=n_pads)
+                                settings, n_pads=n_pads,
+                                distance=None if distance is None else
+                                (distance.mode, float(distance.sigma_m), int(distance.seed),
+                                 placement.port_distances_m))
         cached = cavity_cache.get(ckey)
     if cached is not None:
         z_cav, meta = cached
@@ -576,4 +637,6 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         marker_z_plane_only=(None if z_plane is None else
                              (z_plane[marker_idx] if marker_idx.size
                               else np.zeros(0, dtype=complex))),
+        distance=distance,
+        sampled_distances=sampled,
     )
