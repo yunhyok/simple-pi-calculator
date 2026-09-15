@@ -422,7 +422,7 @@ def test_autosave_restore_roundtrip(make_window, qtbot, appdata):
     assert w2.input_tabs.currentIndex() == 3
     assert w2.decap_panel.current_filter() == "VDD_IO"
     assert w2.recent_files and Path(w2.recent_files[0]) == EXAMPLE
-    assert w2.project_path == str(EXAMPLE)
+    assert Path(w2.project_path) == EXAMPLE
     assert w2.isWindowModified()
     assert "example_project" in w2.windowTitle()
     assert w2.project.display.z_unit == "ohm" and w2.unit_actions["ohm"].isChecked()
