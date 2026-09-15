@@ -1,4 +1,4 @@
-# Simple PI Calculator — 프로젝트 현황 (2026-09-15)
+# Simple PI Calculator — 프로젝트 현황 (2026-09-15, v0.2.0)
 
 ## 목적
 PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR별 PDN 임피던스 |Z(f)|를 계산·표시하는 Windows 프로그램.
@@ -22,3 +22,12 @@ PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR�
 ## 참고
 - 기존 PI-Expectation 코드는 "Internal tool" 표기 → 코드 복사 없이 새로 구현.
 - 설계 문서: docs/DESIGN.md v1.2 (+ Appendix C 리뷰 응답, D 구현 노트).
+
+## v0.2.0 (2026-09-15) 변경
+- PWR별 Number of PADs 열(엑셀 "Number of PADs"/"PAD Count"); pad들은 PAD 끝단에 행으로 배치, 각 pad마다 via set, 이상적 공통 노드에서 병렬 결합(§2.8). N_pad=1은 0.1.0과 동일.
+- "Vias per decap pad"(pad당 병렬 via 수, 기본 1)로 의미 변경; 프로젝트 스키마 3, 자동 마이그레이션.
+- 성능: row별 그룹 정적 모달 합, BLAS 기반 Z(f) 조립, 주파수 청크·PWR 병렬 스레드, 캐시, rcond 추정 → 대형 plane 6–15× 빠름; Advanced > Worker threads.
+- Export: CSV(전체/PWR별), Touchstone .s1p/.sNp(S/Z, RI/MA, R=1 Ω), 모든 plot PNG/SVG 일괄 저장; Reset view 버튼 + Ctrl+D(Ctrl+0), Duplicate Row는 Ctrl+Shift+D.
+- 버그 수정: Run/Save 전 열린 셀 편집 커밋(입력값 무시되던 문제 — 사용자가 보고한 Dummy Cap "결과 동일" 원인), 체크박스 셀 아무 곳 클릭으로 토글, decap 모델 캐시를 파일 내용 해시로.
+- Dummy cap 물리 검토: 2N+dummy가 10 MHz에서 2N 일반보다 낮게 나오는 것은 bank 간 공진 피크 이동(9.66→8.81 MHz) 때문으로 정상.
+- 리뷰 문서: docs/REVIEW-v0.2.md. 테스트 671 통과. Release: SimplePICalculator-Setup-0.2.0.exe.
