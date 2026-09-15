@@ -505,7 +505,8 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                             port_distances_m=pd)
              for g, pd in zip(groups, port_dists)]
     placement = place_ports(pwr.width_m, geoms, w_dec, w_pad, issues, source,
-                            n_pads=getattr(pwr, "n_pads", 1))
+                            n_pads=getattr(pwr, "n_pads", 1),
+                            sigma_m=None if distance is None else float(distance.sigma_m))
     n_pads = placement.n_pads
     a, b = placement.width_m, placement.height_m
     sampled: list[tuple[int, int, float]] = []
@@ -523,7 +524,8 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         issues.info("I_DIST_SAMPLED",
                     f"PWR {pwr.name}: decap distances sampled from a normal distribution "
                     f"truncated to ±1σ (σ = {distance.sigma_m * 1e3:.4g} mm, seed "
-                    f"{int(distance.seed)}): {text}.", source)
+                    f"{int(distance.seed)}): {text}; D_ref = max D + σ = "
+                    f"{placement.d_ref_m * 1e3:.4f} mm.", source)
     c_plane = pair.plane_capacitance(a, b)
 
     # 4. cavity (Z-matrix cache keyed by geometry, plane pair, ports, sweep and mode settings)

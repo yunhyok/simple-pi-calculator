@@ -212,7 +212,7 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
   sub-rows if they do not fit). Plane capacitance and resonances are those of this synthetic plane.
 * **Distance distribution.** By default every via set of a row sits exactly at the row distance D.
   With *Normal (±1σ)* each via set gets its own distance D + σ·z, z ~ N(0, 1) truncated to [−1, 1]
-  (**JKB94**), keeps its x position and moves in y; D_ref is then the largest sampled distance. The
+  (**JKB94**), keeps its x position and moves in y; D_ref is then max D + σ (seed-independent). The
   samples come from `numpy.random.default_rng(seed)` in table/port order, so a seed reproduces a run;
   a Dummy Cap via set gets one sample for both capacitors.
 * **All components on the Top side.** Vias run from the top surface to the nearer of the PWR/GND

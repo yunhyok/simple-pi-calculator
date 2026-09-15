@@ -126,10 +126,15 @@ def norm_ppf(p: np.ndarray | float) -> np.ndarray:
             num = ((((_C[0] * t + _C[1]) * t + _C[2]) * t + _C[3]) * t + _C[4]) * t + _C[5]
             den = (((_D[0] * t + _D[1]) * t + _D[2]) * t + _D[3]) * t + 1.0
             x[mask] = sign * num / den
-    # one Halley step
-    e = norm_cdf(x) - q
-    u = e * _SQRT2PI * np.exp(0.5 * x * x)
-    x = x - u / (1.0 + 0.5 * x * u)
+    # one Halley step. In the upper tail Φ(x) rounds to 1 (review v0.3: errors up to 1e-8 for
+    # x > 4), so there the step is taken on the mirrored lower tail Φ(−x) − (1 − q), where 1 − q
+    # is exact (Sterbenz) and erfc keeps full relative precision.
+    t = np.where(hi, -x, x)
+    r = np.where(hi, 1.0 - q, q)
+    e = norm_cdf(t) - r
+    u = e * _SQRT2PI * np.exp(0.5 * t * t)
+    t = t - u / (1.0 + 0.5 * t * u)
+    x = np.where(hi, -t, t)
     return x if np.ndim(p) else x.reshape(())
 
 

@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-09-15
 
 ### Modelling
-- **Distance distribution** (Decaps tab, applies to every decap row): *Fixed* (default, the 0.2.0 behaviour, results bit-identical) or *Normal (±1σ)* — every via set of a row is placed at D + σ·z with z from a standard normal distribution truncated to [−1, 1] (σ absolute in mm, default 0.5 mm). Sampling is reproducible for a project-stored integer seed (default 12345, "New seed" button): one random stream per computation, rows in table order, via sets in port order; a Dummy Cap via set (two capacitors) gets one sample. Ports keep their x pattern and move in y by d − D; D_ref is the largest sampled distance (DESIGN §2.5.5).
+- **Distance distribution** (Decaps tab, applies to every decap row): *Fixed* (default, the 0.2.0 behaviour, results bit-identical) or *Normal (±1σ)* — every via set of a row is placed at D + σ·z with z from a standard normal distribution truncated to [−1, 1] (σ absolute in mm, default 0.5 mm). Sampling is reproducible for a project-stored integer seed (default 12345, "New seed" button): one random stream per computation, rows in table order, via sets in port order; a Dummy Cap via set (two capacitors) gets one sample. Ports keep their x pattern and move in y by d − D; D_ref = max D + σ, so the plane size does not depend on the seed (DESIGN §2.5.5).
 - Project schema 4: `decaps.distance_mode`, `decaps.sigma_mm`, `decaps.seed`; schema-3 files are migrated to fixed mode.
 
 ### Results

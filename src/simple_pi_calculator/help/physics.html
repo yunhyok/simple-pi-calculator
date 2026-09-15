@@ -109,7 +109,7 @@ row k : y_k = 0.2·D_ref + d_k,   ports evenly spread in x with margins w/2 + 0.
 <p><b>Distance distribution.</b> In the default Fixed mode all via sets of a row share y_k. With <b>Normal (±1σ)</b>
 (<a href="input_decaps.html#distribution">Decaps tab</a>) each via set j gets its own distance
 d_kj = d_k + σ·z_kj, z_kj from a standard normal distribution truncated to ±1 [JKB94], and is moved in y by
-d_kj − d_k; D_ref becomes the largest sampled distance. The physics is unchanged – only the port positions move.
+d_kj − d_k; D_ref becomes max D + σ (the truncation bound, the same for every seed). The physics is unchanged – only the port positions move.
 Distance enters the spreading inductance logarithmically, so a symmetric scatter mostly changes the mid-frequency
 impedance slightly and shifts plane resonances through the changed plane height.</p>
 <p>What this approximation preserves and what it does not:</p>

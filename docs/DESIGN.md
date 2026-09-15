@@ -349,7 +349,7 @@ d_k > 0 [m], count N_k ≥ 1, and Dummy Cap flag δ_k ∈ {false, true}. The PWR
 observation pads (PWR list column `Number of PADs`, integer, default 1, §4.3).
 
 ```
-D_ref = max_k d_k                      if G ≥ 1          [m]   (normal distance mode: max_kj d_kj, §2.5.5)
+D_ref = max_k d_k                      if G ≥ 1          [m]   (normal distance mode: max_k d_k + σ, §2.5.5)
 D_ref = W / 1.4                        if G = 0 (no decap rows: square plane H = W, plane-only result)
 H     = 1.4 · D_ref                                      [m]
 y_0   = 0.2 · D_ref                                      [m]  PAD-row centre line
@@ -499,6 +499,8 @@ z    = Φ⁻¹(p), clipped to [−1, 1]                 (guards the last-ulp rou
 Φ uses `math.erfc` (vectorised element-wise); Φ⁻¹ is Acklam's rational approximation
 (relative error < 1.15e-9) refined by one Halley step
 x ← x − u/(1 + x·u/2), u = (Φ(x) − p)·√(2π)·e^(x²/2) **[Acklam03]**, giving |Φ(Φ⁻¹(p)) − p| < 1e-13·p.
+For p > 1 − 0.02425 the step is taken on the mirrored lower tail (x → −x, p → 1 − p, exact) because
+Φ(x) rounds to 1 there; Φ⁻¹ then agrees with an erfc bisection to < 1e-12 over [−8, 8] (review v0.3).
 No scipy. PCG64 and float64 arithmetic are platform independent; results for a given seed are
 identical across platforms up to the last-ulp behaviour of the C library `erfc`.
 
@@ -515,20 +517,23 @@ below it (documented in Help). The GUI placement preview calls the same function
 y by d_kj − d_k:
 
 ```
-D_ref  = max over all decap ports of d_kj            (G = 0: W/1.4 as before)
+D_ref  = max_k d_k + σ                              (G = 0: W/1.4 as before; fixed mode: max_k d_k)
 H      = 1.4 · D_ref,     y_0 = 0.2 · D_ref           (the PAD row follows D_ref)
 y_kj   = clip(y_r(j) + (d_kj − d_k), w/2, H − w/2)    y_r(j) = sub-row centre line of port j (§2.5.3)
 ```
 
-so H still contains every port with the 20 % margins. Clipping counts per port (`W_DECAP_CLIPPED`),
+D_ref is the upper truncation bound of every sample, so H is **independent of the seed** (only σ and
+the row distances enter) and still contains every port with the 20 % margins. (0.3 review F4: an earlier
+draft used max_kj d_kj, which made the plane size — and its capacitance and anti-resonances — change with
+the seed; on the example VDD_IO net the ≈ 616 MHz peak moved by ±2 %.) Clipping counts per port (`W_DECAP_CLIPPED`),
 `W_DECAP_TOO_CLOSE` uses min_j d_kj, `W_PORT_OVERLAP` is unchanged. `Placement.port_distances_m`
 holds d_kj (= d_k in fixed mode).
 
 **Validation / messages.** `E_DIST_MODE` (mode not `fixed`/`normal`), `E_DIST_SIGMA` (σ ≤ 0 or not
 finite), `E_DIST_SEED` (not an integer 0 … 2³¹−1) are global errors (source `Decaps`, checked only in
 normal mode for σ and seed). `W_DIST_SIGMA_LARGE` per row when σ ≥ d_k (samples may reach the PAD row;
-negative d_kj are clipped to the plane edge). Info `I_DIST_SAMPLED` per PWR in normal mode: σ, seed and
-min/mean/max of the sampled distances.
+negative d_kj are clipped to the plane edge). Info `I_DIST_SAMPLED` per PWR in normal mode: σ, seed,
+min/mean/max of the sampled distances and D_ref.
 
 **Results.** `PwrResult.distance` (the `DistanceDistribution`, `None` for fixed) and
 `PwrResult.sampled_distances`: list of (row index k — position among the net's enabled rows, as in
@@ -2706,7 +2711,7 @@ All with D_drill = 0.2 mm ⇒ w = 0.223690 mm; coordinates compared with abs 1e-
     truncated samples in [−1, 1] with mean 0 and variance 0.29113 (200 000 samples, fixed seed); one
     stream (rows are consecutive slices of one draw), same seed identical, different seed different;
     P_k samples per row (ceil(N/2) for Dummy Cap); per-port y = fixed position + (d_kj − d_k) incl.
-    sub-rows, x unchanged, D_ref = max d_kj, H = 1.4·D_ref; `W_DECAP_CLIPPED` for a sampled d < 0;
+    sub-rows, x unchanged, D_ref = max d_k + σ, H = 1.4·D_ref identical across seeds; `W_DECAP_CLIPPED` for a sampled d < 0;
     engine: fixed mode identical to the default path, σ = 1e-7 mm within 1e-6 of fixed, all samples in
     [d − σ, d + σ], sample mean of 2000 via sets within 25 µm of d, table-order stream shared by all
     nets (single-net run identical), cache key contains mode/σ/seed (warm = cold), export header line;
@@ -3104,7 +3109,7 @@ explanations for every code in its area.
    f_eval = grid ∪ markers.
 3. (Once per computation, before step 1 of any net.) In `normal` distance mode draw d_kj for all
    enabled decap rows of the table in table/port order (§2.5.5).
-   Derive D_ref and H (from d_kj), place the N_pad PADs (PAD row) and the decap ports, compute caps per
+   Derive D_ref and H (normal mode: max d_k + σ), place the N_pad PADs (PAD row) and the decap ports, compute caps per
    port (§2.5, §2.6.5); compute C_plane for W × H; `I_DIST_SAMPLED` in normal mode.
 4. Build CavityModel with a = W, b = H (mode counts §3.2, static sums §3.3) and evaluate
    Z_cav(f_eval).

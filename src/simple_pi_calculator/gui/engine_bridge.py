@@ -308,7 +308,9 @@ class EngineBridge:
                                              port_distances_m=sampled.get(id(r)))
                           for r in rows]
                 pl = mod.place_ports(width_m, groups, w_dec, w_pad, issues, source,
-                                     n_pads=n_pads)
+                                     n_pads=n_pads,
+                                     sigma_m=float(dist_cfg.sigma_mm) * MM
+                                     if normal and sampled else None)
                 return PreviewPlacement(
                     float(pl.width_m), float(pl.height_m), float(pl.d_ref_m),
                     np.asarray(pl.xy_m, dtype=float),

@@ -110,9 +110,12 @@ def test_placement_ports_scattered_d_ref_and_h():
     dists = sample_row_distances([(10, 8 * MM, False), (4, 15 * MM, False)], normal(0.5))
     groups = [dataclasses.replace(g, port_distances_m=d) for g, d in zip(groups_fixed, dists)]
     fixed = place_ports(60 * MM, groups_fixed, W, W, IssueCollector(), "t")
-    pl = place_ports(60 * MM, groups, W, W, IssueCollector(), "t")
+    pl = place_ports(60 * MM, groups, W, W, IssueCollector(), "t", sigma_m=0.5 * MM)
     all_d = [v for d in dists for v in d]
-    assert pl.d_ref_m == max(all_d) and pl.height_m == pytest.approx(1.4 * max(all_d), rel=1e-15)
+    assert pl.d_ref_m == 15.5 * MM and pl.height_m == pytest.approx(1.4 * 15.5 * MM, rel=1e-15)
+    # without σ (direct caller) the largest given distance is used
+    legacy = place_ports(60 * MM, groups, W, W, IssueCollector(), "t")
+    assert legacy.d_ref_m == max(all_d)
     assert np.array_equal(pl.xy_m[:, 0], fixed.xy_m[:, 0])  # x pattern unchanged
     y_pad = 0.2 * pl.d_ref_m
     assert pl.xy_m[0, 1] == pytest.approx(y_pad, rel=1e-15)
@@ -203,9 +206,12 @@ def test_normal_mode_bounds_reproducible_and_seed_dependent(base_inputs):
             counts[k] = counts.get(k, 0) + 1
         assert [counts.get(k, 0) for k in range(len(enabled))] == \
             [math.ceil(r.count / 2) if r.dummy else r.count for r in enabled]
-        assert res.placement.d_ref_m * 1e3 == pytest.approx(
-            max(d for _, _, d in res.sampled_distances), rel=1e-15)
+        # D_ref = max D + σ (review v0.3, F4): seed-independent, bounds every sample
+        d_max = max(r.distance_m for r in enabled)
+        assert res.placement.d_ref_m == pytest.approx(d_max + 0.5 * MM, rel=1e-15)
+        assert res.placement.d_ref_m * 1e3 >= max(d for _, _, d in res.sampled_distances)
         assert res.info["H_m"] == pytest.approx(1.4 * res.placement.d_ref_m, rel=1e-15)
+        assert res.placement.height_m == c[name].placement.height_m
         assert np.array_equal(res.z_pad, b[name].z_pad)
         assert res.sampled_distances == b[name].sampled_distances
         assert not np.array_equal(res.z_pad, c[name].z_pad)

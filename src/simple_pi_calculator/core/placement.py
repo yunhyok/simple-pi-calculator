@@ -8,7 +8,7 @@ rows in table order, sub-rows ascending, left to right.
 
 With a sampled distance distribution (§2.5.5) every decap port j of row k carries its own distance
 d_kj: the port keeps the x / sub-row pattern of the row and is shifted in y by d_kj − d_k, and
-D_ref = max over all ports of d_kj.
+D_ref = max_k d_k + σ (the truncation bound, independent of the seed).
 """
 
 from __future__ import annotations
@@ -121,8 +121,14 @@ def caps_per_port_for_row(count: int, dummy: bool,
 
 def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
                 decap_port_width_m: float, pad_port_width_m: float,
-                issues: IssueCollector, source: str, n_pads: int = 1) -> Placement:
+                issues: IssueCollector, source: str, n_pads: int = 1,
+                sigma_m: float | None = None) -> Placement:
     """Derive H, D_ref and all port coordinates (§2.5).
+
+    ``sigma_m`` = σ of the ``normal`` distance distribution (§2.5.5): D_ref = max_k d_k + σ, the
+    truncation bound of every sample, so H does not depend on the seed. ``None`` (fixed mode):
+    D_ref = max_k d_k; a direct caller that passes per-port distances without σ gets the largest
+    given distance.
 
     ``n_pads`` = N_pad observation pads in a row at y = 0.2·D_ref (§2.5.1); N_pad = 1 gives the
     single PAD at (W/2, 0.2·D_ref).
@@ -163,7 +169,14 @@ def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
     if errors:
         raise InputError(errors)
 
-    H, d_ref = plane_height(W, [d for g in groups for d in _group_distances(g)])
+    if sigma_m is not None and not (math.isfinite(float(sigma_m)) and float(sigma_m) >= 0.0):
+        raise ValueError(f"sigma_m must be a finite number >= 0 (got {sigma_m!r})")
+    if sigma_m is not None and groups:
+        # §2.5.5 normal mode: seed-independent D_ref = max_k d_k + σ (review v0.3, F4)
+        d_ref = max(float(g.distance_m) for g in groups) + float(sigma_m)
+        H = PLANE_HEIGHT_FACTOR * d_ref
+    else:
+        H, d_ref = plane_height(W, [d for g in groups for d in _group_distances(g)])
     y_pad = PAD_MARGIN_FACTOR * d_ref
 
     if y_pad < 0.5 * w_pad:

@@ -272,7 +272,7 @@ class PwrTableModel(_BaseTableModel):
                    "≥ 1, default 1).\nThe pads form a row across the width at y = 0.2·D_ref; each "
                    "pad has its own via set of 'PAD vias' via pairs,\nand all pads are joined at "
                    "an ideal common node (|Z| of the pads in parallel).",
-                   "Reference distance D_ref = max decap distance (mm)",
+                   "Reference distance D_ref = max decap distance (mm); + σ in the Normal distance mode",
                    "Derived plane height H = 1.4 · D_ref (mm)", "Number of decap ports",
                    "PWR–GND plane separation d (mm)", "Effective relative permittivity",
                    "Plane capacitance of the synthetic W × H plane (pF)")

@@ -122,11 +122,14 @@ row, or changing a count, therefore changes the samples of the rows below it.</l
 <li><b>Dummy Cap rows</b>: a via set carrying two capacitors gets <b>one</b> sample – the pair shares its vias
 and moves together.</li>
 <li><b>Geometry</b>: each via set keeps its x position (and sub-row pattern) and is moved in y by d − D. The plane
-height uses the largest sampled distance: D_ref = max d, H = 1.4·D_ref. Ports that would leave the plane are moved
-to the edge (<code>W_DECAP_CLIPPED</code>).</li>
+height uses the upper truncation bound: <b>D_ref = max D + σ</b> (largest row distance of the net plus σ),
+H = 1.4·D_ref. It is the same for every seed, so the plane size – and with it the plane capacitance and resonances –
+does not change when only the seed changes, and every sampled via set fits inside the plane. Fixed mode keeps
+D_ref = max D. A sample closer than the plane edge (only possible for σ ≥ D) is moved to the edge
+(<code>W_DECAP_CLIPPED</code>).</li>
 <li>The <b>PWR Nets</b> preview shows the scattered via sets; hover a via set to see its row, index and
 distance. After a computation the Messages dock lists <code>I_DIST_SAMPLED</code> with σ, the seed and the
-min/mean/max distance per PWR net, and CSV/Touchstone exports record the same summary in their header.</li>
+min/mean/max distance and D_ref per PWR net, and CSV/Touchstone exports record the same summary in their header.</li>
 </ul>
 <table border="0" cellspacing="0" cellpadding="8" width="100%">
 <tr><td class="note"><b>Note.</b> One seed is one possible layout. To judge the spread of |Z| caused by distance
@@ -181,7 +184,7 @@ Identical models (same file, subcircuit and S2P mode) are computed only once.</p
 <tr><td><code>W_DECAP_CLIPPED</code></td><td>A row with many sub-rows extends beyond the plane; ports were moved to the plane edge.</td><td>Increase W, reduce the count, or split the row.</td></tr>
 <tr><td><code>W_PORT_OVERLAP</code></td><td>Two ports overlap (e.g. two rows with almost equal distance).</td><td>Merge the rows or separate their distances by more than a port width.</td></tr>
 <tr><td><code>I_DUMMY_SINGLE</code></td><td>Dummy Cap set on a row with only one capacitor; no effect.</td><td>Nothing.</td></tr>
-<tr><td><code>I_DIST_SAMPLED</code></td><td>Normal distance distribution: σ, seed and min/mean/max of the sampled distances of the PWR net.</td><td>Nothing; use it to document the run.</td></tr>
+<tr><td><code>I_DIST_SAMPLED</code></td><td>Normal distance distribution: σ, seed, min/mean/max of the sampled distances and D_ref = max D + σ of the PWR net.</td><td>Nothing; use it to document the run.</td></tr>
 <tr><td><code>W_DIST_SIGMA_LARGE</code></td><td>σ is not smaller than a row's distance: sampled via sets can reach the PAD row or the plane edge.</td><td>Reduce σ or check the distance.</td></tr>
 <tr><td><code>E_DIST_SIGMA</code>, <code>E_DIST_SEED</code>, <code>E_DIST_MODE</code></td><td>Invalid distance distribution (σ ≤ 0, seed outside 0 … 2147483647, unknown mode).</td><td>Correct the value in the Decaps tab or in the project file.</td></tr>
 <tr><td><code>E_XL_BOOL</code></td><td>A Dummy Cap cell is neither yes nor no.</td><td>Use Yes/No, 1/0 or TRUE/FALSE.</td></tr>

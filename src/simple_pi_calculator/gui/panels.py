@@ -633,9 +633,11 @@ class DecapPanel(QWidget):
         dist.addWidget(self.new_seed_button)
         dist.addStretch(1)
         layout.addLayout(dist)
-        self.distance_mode.currentIndexChanged.connect(self._write_distance)
-        self.sigma.valueChanged.connect(self._write_distance)
-        self.seed.valueChanged.connect(self._write_distance)
+        # each control writes only its own field (review v0.3: a σ that the spin box cannot show
+        # exactly, e.g. 0.12345 mm from a project file, must survive an edit of the seed)
+        self.distance_mode.currentIndexChanged.connect(lambda *_: self._write_distance("mode"))
+        self.sigma.valueChanged.connect(lambda *_: self._write_distance("sigma_mm"))
+        self.seed.valueChanged.connect(lambda *_: self._write_distance("seed"))
         self.new_seed_button.clicked.connect(self.new_seed)
         self._update_distance_enabled()
 
@@ -692,16 +694,22 @@ class DecapPanel(QWidget):
                   self.new_seed_button):
             w.setEnabled(normal)
 
-    def _write_distance(self, *_args) -> None:
+    def _write_distance(self, which: str) -> None:
+        """Write the field ``which`` ("mode", "sigma_mm" or "seed") of the edited control."""
         self._update_distance_enabled()
         if self._project is None:
             return
         d = self._project.distance
-        new = (str(self.distance_mode.currentData() or "fixed"), float(self.sigma.value()),
-               int(self.seed.value()))
-        if (d.mode, float(d.sigma_mm), int(d.seed)) == new:
+        value: Any
+        if which == "mode":
+            value = str(self.distance_mode.currentData() or "fixed")
+        elif which == "sigma_mm":
+            value = float(self.sigma.value())
+        else:
+            value = int(self.seed.value())
+        if getattr(d, which) == value:
             return
-        d.mode, d.sigma_mm, d.seed = new
+        setattr(d, which, value)
         self.edited.emit()
 
     def new_seed(self) -> int:
