@@ -187,7 +187,7 @@ def test_load_example_project_populates_tables(make_window):
     assert w.decap_panel.proxy.rowCount() == 4
     assert w.windowTitle() == "Simple PI Calculator — example_project[*]"
     assert not w.isWindowModified()
-    assert w.recent_files[0] == str(EXAMPLE)
+    assert Path(w.recent_files[0]) == EXAMPLE
 
 
 def test_height_column_updates_and_preview_paints(make_window, qtbot):
@@ -421,7 +421,7 @@ def test_autosave_restore_roundtrip(make_window, qtbot, appdata):
     assert w2.project.decap_rows[2].dummy is True
     assert w2.input_tabs.currentIndex() == 3
     assert w2.decap_panel.current_filter() == "VDD_IO"
-    assert w2.recent_files and w2.recent_files[0] == str(EXAMPLE)
+    assert w2.recent_files and Path(w2.recent_files[0]) == EXAMPLE
     assert w2.project_path == str(EXAMPLE)
     assert w2.isWindowModified()
     assert "example_project" in w2.windowTitle()
@@ -481,7 +481,7 @@ def test_save_as_appends_suffix_and_updates_recent(make_window, tmp_path):
     assert w.save_project_as(str(tmp_path / "board"))
     saved = tmp_path / "board.spical.json"
     assert saved.is_file()
-    assert w.recent_files[0] == str(saved)
+    assert Path(w.recent_files[0]) == saved
     assert not w.isWindowModified()
     assert w.windowTitle() == "Simple PI Calculator — board[*]"
     doc = json.loads(saved.read_text("utf-8"))
