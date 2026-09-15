@@ -92,6 +92,14 @@ def result_rows(result: Any) -> tuple[list[str], list[list[float]]]:
     return headers, rows
 
 
+def result_n_pads(result: Any) -> int:
+    """N_pad of a result (``info["n_pads"]``, else the placement, else 1; §2.8)."""
+    info = getattr(result, "info", None) or {}
+    if "n_pads" in info:
+        return int(info["n_pads"])
+    return int(getattr(getattr(result, "placement", None), "n_pads", 1) or 1)
+
+
 def marker_readouts(result: Any) -> list[tuple[float, float]]:
     """``(f_marker, |Z|)`` pairs of the exact marker values."""
     f = np.asarray(getattr(result, "marker_f_hz", []), dtype=float)
@@ -115,6 +123,7 @@ def _header_lines(result: Any, stem: str) -> list[str]:
     lines = [f"Simple PI Calculator {__version__} results",
              f"Project: {stem}",
              f"PWR: {result.name}",
+             f"Number of PADs: {result_n_pads(result)}",
              f"Exported (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}"]
     for f, zabs in marker_readouts(result):
         lines.append(f"|Z| @ {f:.6g} Hz = {_fmt(zabs)} Ohm")
@@ -185,6 +194,7 @@ def export_csv_combined(results: Sequence[Any], path: str, stem: str = "results"
         fh.write(f"# Project: {stem}\n")
         fh.write(f"# Exported (UTC): {_utc_now()}\n")
         for res in results:
+            fh.write(f"# {res.name}: Number of PADs = {result_n_pads(res)}\n")
             for f, zabs in marker_readouts(res):
                 fh.write(f"# {res.name}: |Z| @ {f:.6g} Hz = {_fmt(zabs)} Ohm\n")
         writer = csv.writer(fh)
@@ -220,7 +230,8 @@ def geometry_summary(project: "Project | None", pwr_name: str) -> list[str]:
         return []
     names = {layer.number: (layer.name or f"L{layer.number}") for layer in project.layers}
     lines = [f"  PWR layer {row.pwr_layer} ({names.get(row.pwr_layer, '?')}), GND layer "
-             f"{row.gnd_layer} ({names.get(row.gnd_layer, '?')}), width {row.width_mm:g} mm"]
+             f"{row.gnd_layer} ({names.get(row.gnd_layer, '?')}), width {row.width_mm:g} mm, "
+             f"{int(getattr(row, 'n_pads', 1))} PAD(s)"]
     decaps = [d for d in project.decap_rows if d.pwr_name == pwr_name and d.enabled]
     if decaps:
         parts = [f"{d.count} x {os.path.basename(d.model_file)} @ {d.distance_mm:g} mm"
@@ -232,7 +243,8 @@ def geometry_summary(project: "Project | None", pwr_name: str) -> list[str]:
     if vias is not None:
         lines.append(f"  Vias: drill {vias.drill_diameter_mm:g} mm, antipad "
                      f"{vias.antipad_diameter_mm:g} mm, pitch {vias.via_pitch_mm:g} mm, "
-                     f"{vias.vias_per_pad} per decap pad, {vias.pad_via_count} PAD via pair(s)")
+                     f"{vias.vias_per_pad} per decap pad, {vias.pad_via_count} via pair(s) per "
+                     "observation PAD")
     return lines
 
 
@@ -253,6 +265,7 @@ def _touchstone_comments(results: Sequence[Any], stem: str, options: TouchstoneO
                      "modelled).")
     for k, res in enumerate(results, start=1):
         lines.append(f"Port {k}: PWR {res.name}" if combined else f"PWR: {res.name}")
+        lines.append(f"  Number of PADs: {result_n_pads(res)} (joined at an ideal common node)")
         lines.extend(geometry_summary(project, res.name))
         info = getattr(res, "info", None) or {}
         if info:

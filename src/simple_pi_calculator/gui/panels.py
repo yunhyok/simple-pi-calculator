@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from simple_pi_calculator.constants import (
     F_START_MIN_HZ,
     F_STOP_MAX_HZ,
+    MAX_N_PADS,
     MAX_WORKERS,
     N_POINTS_MAX,
     N_POINTS_MIN,
@@ -321,13 +322,15 @@ class ViaPanel(QWidget):
         self.pad_vias.setRange(1, 400)
         self.pad_vias.setKeyboardTracking(False)
         self.pad_vias.setToolTip(
-            "Number of PWR/GND via pairs at the observation PAD (the IC pad where |Z| is "
-            "computed).\nIndependent of the decap via setting: Z_via,pad = Z_viapair / count.")
+            "PAD vias = PWR/GND via pairs per observation pad (the IC pads where |Z| is "
+            "computed).\nEvery one of the PWR net's PADs ('# PADs' column of the PWR list) has "
+            "its own via set:\nZ_via,pad = Z_viapair / count per pad, so the total PAD via count "
+            "is # PADs × count.")
         form.addRow("Drill diameter", self.drill)
         form.addRow("Anti-pad diameter", self.antipad)
         form.addRow("Via pitch (PWR–GND via centre spacing)", self.pitch)
         form.addRow("Vias per decap pad", self.vias_per_pad)
-        form.addRow("PAD vias (observation pad)", self.pad_vias)
+        form.addRow("PAD vias (per observation pad)", self.pad_vias)
         form.addRow("", QLabel("Decaps and PAD are mounted on the Top side", self))
         outer.addLayout(form)
 
@@ -492,6 +495,8 @@ class PwrPanel(QWidget):
                                             SpinDelegate(self.table, 1, 999))
         self.table.setItemDelegateForColumn(PwrTableModel.COL_WIDTH,
                                             DoubleSpinDelegate(self.table, 0.0, 10000.0, 3, 1.0))
+        self.table.setItemDelegateForColumn(PwrTableModel.COL_NPADS,
+                                            SpinDelegate(self.table, 1, MAX_N_PADS))
         size_columns(self.table, PwrTableModel.COL_NAME,
                      [c for c in range(model.columnCount()) if c != PwrTableModel.COL_NAME],
                      minimum=80)

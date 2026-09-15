@@ -4,7 +4,7 @@
 Writes into ``examples/`` (or ``--out DIR``):
 
 * ``stackup_6L.xlsx``   — sheet ``Stackup``, header in row 1 (§4.2)
-* ``pwr_list.xlsx``     — sheet ``PWR`` (§4.3)
+* ``pwr_list.xlsx``     — sheet ``PWR`` incl. ``Number of PADs`` (§4.3)
 * ``decap_list.xlsx``   — sheet ``Decaps`` incl. ``Dummy Cap`` (§4.4)
 * ``example_project.spical.json`` — all 11 layers, 2 PWRs, 4 decap rows (§4.7)
 
@@ -46,10 +46,11 @@ STACKUP_ROWS: list[tuple[int, str, float, float | None, float, float]] = [
     (11, "BOTTOM", 0.035, 5.8e7, 4.2, 0.02),
 ]
 
-#: §4.3 example PWR list: (name, PWR layer, GND layer, width mm)
-PWR_ROWS: list[tuple[str, int, int, float]] = [
-    ("VDD_CORE", 5, 3, 60.0),
-    ("VDD_IO", 7, 9, 30.0),
+#: §4.3 example PWR list: (name, PWR layer, GND layer, width mm, number of PADs)
+#: (one observation pad per net keeps the §8.11 golden values)
+PWR_ROWS: list[tuple[str, int, int, float, int]] = [
+    ("VDD_CORE", 5, 3, 60.0, 1),
+    ("VDD_IO", 7, 9, 30.0, 1),
 ]
 
 #: §4.4 example decap list: (PWR, file, count, distance mm, dummy)
@@ -101,9 +102,10 @@ def write_stackup_xlsx(path: str) -> None:
 
 def write_pwr_xlsx(path: str) -> None:
     wb, ws = _new_workbook("PWR")
-    ws.append(["PWR Name", "Layer Number", "GND Layer Number", "PWR Plane Width"])
-    for name, pwr, gnd, width in PWR_ROWS:
-        ws.append([name, pwr, gnd, int(width) if float(width).is_integer() else width])
+    ws.append(["PWR Name", "Layer Number", "GND Layer Number", "PWR Plane Width",
+               "Number of PADs"])
+    for name, pwr, gnd, width, n_pads in PWR_ROWS:
+        ws.append([name, pwr, gnd, int(width) if float(width).is_integer() else width, n_pads])
     _save_deterministic(wb, path)
 
 
@@ -127,8 +129,8 @@ def example_project(folder: str) -> Project:
     project.layers = [LayerRow(number=n, name=name, thickness_mm=t, conductivity_s_per_m=sigma,
                                dk=dk, df=df) for n, name, t, sigma, dk, df in STACKUP_ROWS]
     project.pwr_source_path = os.path.join(folder, "pwr_list.xlsx")
-    project.pwr_rows = [PwrRow(name=name, pwr_layer=p, gnd_layer=g, width_mm=w, enabled=True)
-                        for name, p, g, w in PWR_ROWS]
+    project.pwr_rows = [PwrRow(name=name, pwr_layer=p, gnd_layer=g, width_mm=w, enabled=True,
+                               n_pads=n) for name, p, g, w, n in PWR_ROWS]
     project.decap_source_path = os.path.join(folder, "decap_list.xlsx")
     project.decap_rows = [DecapRow(pwr_name=pwr, model_file=os.path.join(folder, model),
                                    count=count, distance_mm=dist, dummy=dummy)

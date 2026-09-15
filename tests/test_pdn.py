@@ -11,10 +11,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from simple_pi_calculator.core import pdn as pdn_mod
+from simple_pi_calculator.core.cavity import (CavityModel, cavity_cache_key, cluster_port_width,
+                                              cluster_via_positions)
 from simple_pi_calculator.core.engine import CancelledError, compute_project, validate_inputs
 from simple_pi_calculator.core.pdn import (DecapGroup, PwrSpec, SingularReductionError,
-                                           compute_pwr, evaluation_frequencies, reduce_ports)
-from simple_pi_calculator.core.stackup import Layer, Stackup
+                                           combine_pads, compute_pwr, evaluation_frequencies,
+                                           reduce_ports)
+from simple_pi_calculator.core.stackup import Layer, PlanePair, Stackup
 from simple_pi_calculator.core.via import ViaSettings
 from simple_pi_calculator.errors import IssueCollector
 from simple_pi_calculator.io.project_io import load_project, to_inputs
@@ -386,3 +390,179 @@ def test_performance_guard():
     assert res.placement.height_m == pytest.approx(98 * MM)
     assert res.info["P"] == 51
     assert elapsed < 60.0
+
+
+# ---------------------------------------------------------------------------------------------
+# Several observation pads per PWR net (§2.5.1, §2.8, schema 3)
+# ---------------------------------------------------------------------------------------------
+def _with_pads(inputs, n_pads, **via_changes):
+    return dataclasses.replace(
+        inputs, pwrs=[dataclasses.replace(p, n_pads=n_pads) for p in inputs.pwrs],
+        vias=dataclasses.replace(inputs.vias, **via_changes))
+
+
+def _old_reduction(z_cav, z_load):
+    """The v0.1 single-PAD Schur reduction written out independently (§2.8)."""
+    K = z_cav.shape[1] - 1
+    out = np.empty(z_cav.shape[0], dtype=complex)
+    for i in range(z_cav.shape[0]):
+        a = z_cav[i, 1:, 1:] + np.diag(z_load[i])
+        u = np.linalg.solve(a, z_cav[i, 1:, 0])
+        out[i] = z_cav[i, 0, 0] - z_cav[i, 0, 1:] @ u
+    return out if K else z_cav[:, 0, 0]
+
+
+def test_single_pad_is_the_old_code_path(example_inputs, example_results):
+    """(i) N_pad = 1 reproduces the pre-schema-3 result: the explicit ``n_pads = 1`` project equals
+    the example to 1e-12, and the general formula Z = 1/(1ᵀ(Z_pp,red + Z_via)⁻¹1) on the 1×1
+    reduced matrix equals Z_red + Z_via,pad of the old reduction to 1e-12."""
+    base = example_results[0]
+    results, _ = compute_project(_with_pads(example_inputs, 1))
+    for r in results:
+        assert r.n_pads == 1 and r.info["n_pads"] == 1
+        np.testing.assert_allclose(r.z_pad, base[r.name].z_pad, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(r.marker_z, base[r.name].marker_z, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(r.z_plane_only, base[r.name].z_plane_only, rtol=1e-12, atol=0)
+    rng = np.random.default_rng(7)
+    F, P = 6, 5
+    m = rng.normal(size=(F, P, P)) + 1j * rng.normal(size=(F, P, P))
+    z_cav = m + np.transpose(m, (0, 2, 1)) + 10 * np.eye(P)
+    z_load = rng.normal(size=(F, P - 1)) + 1j * rng.normal(size=(F, P - 1))
+    z_via = rng.normal(size=F) * 1e-3 + 1j * rng.normal(size=F) * 1e-3
+    old = _old_reduction(z_cav, z_load)
+    new = reduce_ports(z_cav, z_load, n_pads=1)
+    np.testing.assert_allclose(new, old, rtol=1e-12, atol=0)
+    general = combine_pads(new[:, None, None], z_via)
+    np.testing.assert_allclose(general, old + z_via, rtol=1e-12, atol=0)
+
+
+def test_coincident_pads_equal_one_pad_with_parallel_vias():
+    """Algebraic identity of §2.8: N pads with identical rows/columns (same position and width) and
+    Z_via each equal one pad with Z_via/N: 1/(1ᵀ(z·J + Z_via·I)⁻¹1) = z + Z_via/N."""
+    rng = np.random.default_rng(3)
+    F, K, N = 4, 3, 4
+    m = rng.normal(size=(F, K + 1, K + 1)) + 1j * rng.normal(size=(F, K + 1, K + 1))
+    z1 = m + np.transpose(m, (0, 2, 1)) + 8 * np.eye(K + 1)
+    idx = [0] * N + list(range(1, K + 1))
+    zN = z1[:, idx][:, :, idx]
+    z_load = 0.5 + 1j * rng.normal(size=(F, K))
+    z_via = 0.01 + 0.02j
+    single = reduce_ports(z1, z_load) + z_via / N
+    multi = combine_pads(reduce_ports(zN, z_load, n_pads=N), np.full(F, z_via))
+    np.testing.assert_allclose(multi, single, rtol=1e-9)
+
+
+def test_explicit_pad_cluster_matches_cluster_port():
+    """Four single-via pads at the §2.4.5 cluster positions, joined in parallel through
+    reduce_ports(n_pads=4) + combine_pads, give the explicit-port loop inductance 0.16653 nH of
+    §8.3 #11; the one-port cluster model (w = 1.77893 mm) is within 2 %."""
+    pair = PlanePair(pwr_layer=Layer(1, "P", 35e-6, math.inf, None, None),
+                     gnd_layer=Layer(3, "G", 35e-6, math.inf, None, None), d_m=0.1 * MM,
+                     er_eff=4.0, tand_eff=0.0, d_dielectric_m=0.1 * MM)
+    a, b, f = 30 * MM, 14 * MM, np.array([1e6])
+    w1 = cluster_port_width(1, 0.2 * MM, 1 * MM)
+    off = cluster_via_positions(4, math.sqrt(2) * MM)
+    ports = [[15 * MM + dx, 2 * MM + dy] for dx, dy in off] + [[15 * MM, 12 * MM]]
+    z = CavityModel(a, b, pair, ports, [w1] * 5, np.array([1e5, 1e9])).z_matrix(f)
+    short = np.zeros((1, 1), dtype=complex)
+    z_pad = combine_pads(reduce_ports(z, short, n_pads=4), np.zeros(1))
+    L4 = z_pad[0].imag / (2 * math.pi * f[0])
+    assert L4 == pytest.approx(0.16653e-9, rel=5e-3)
+    w4 = cluster_port_width(4, 0.2 * MM, 1 * MM)
+    zc = CavityModel(a, b, pair, [[15 * MM, 2 * MM], [15 * MM, 12 * MM]], [w4, w1],
+                     np.array([1e5, 1e9])).z_matrix(f)
+    Lc = reduce_ports(zc, short)[0].imag / (2 * math.pi * f[0])
+    assert Lc == pytest.approx(L4, rel=0.02)
+
+
+def test_combine_pads_singular():
+    """Coincident pads without via impedance make 1ᵀ(z·J)⁻¹1 singular → E_SINGULAR path."""
+    z = np.ones((2, 3, 3), dtype=complex) * (1 + 1j)
+    with pytest.raises(SingularReductionError):
+        combine_pads(z, np.zeros(2))
+
+
+#: VDD_IO / VDD_CORE with four observation pads (1 PAD via pair each), regression of this
+#: implementation: |Z| at 100 kHz, 1 MHz, 10 MHz, 100 MHz, 1 GHz [Ω]
+FOUR_PADS = {
+    "VDD_IO": [152.28e-3, 10.786e-3, 18.742e-3, 425.88e-3, 110.05e-3],
+    "VDD_CORE": [38.724e-3, 3.1319e-3, 28.767e-3, 57.218e-3, 2.2357],
+}
+
+
+def test_four_pads_end_to_end(example_inputs, example_results):
+    """N_pad = 4 on the example: pad row at y = 0.2·D_ref, P = 4 + decap ports, regression values,
+    and comparison with the single-pad "VDD_IO, 4 PAD vias" variant (§8.11 #4)."""
+    results, issues = compute_project(_with_pads(example_inputs, 4))
+    assert not [i for i in issues if i.severity.name == "ERROR"]
+    r = {x.name: x for x in results}
+    io_, core = r["VDD_IO"], r["VDD_CORE"]
+    assert io_.n_pads == 4 and io_.info["n_pads"] == 4 and io_.info["P"] == 7
+    assert core.info["P"] == 18
+    m_p = 0.5 * io_.info["w_pad_m"] + 0.1 * 30 * MM
+    l_p = 30 * MM - 2 * m_p
+    expect_x = [m_p + (i + 0.5) * l_p / 4 for i in range(4)]
+    assert io_.placement.pads_xy_m[:, 0] == pytest.approx(expect_x, abs=1e-12)
+    assert np.all(io_.placement.pads_xy_m[:, 1] == pytest.approx(2 * MM))
+    # decap ports and D_ref semantics unchanged
+    assert io_.placement.xy_m[4:] == pytest.approx(example_results[0]["VDD_IO"].placement.xy_m[1:])
+    for name, values in FOUR_PADS.items():
+        for f, e in zip(FREQS, values):
+            assert _z_at(r[name], f) == pytest.approx(e, rel=1e-3), f"{name} @ {f:g} Hz"
+    # not geometrically equivalent to one 4-via cluster pad at (15, 2) mm (445.7 mΩ @100 MHz):
+    # four pads spread across the width at the same total via count give a lower mid-band |Z|
+    single, _ = compute_project(_with_pads(example_inputs, 1, pad_via_count=4))
+    single = {x.name: x for x in single}["VDD_IO"]
+    assert _z_at(single, 1e8) == pytest.approx(445.7e-3, rel=0.10)
+    assert _z_at(io_, 1e8) < _z_at(single, 1e8)
+    assert abs(io_.marker_z_plane_only[0]) == pytest.approx(995.1, rel=0.03)
+
+
+def test_more_pads_lower_mid_band_impedance(example_inputs):
+    """|Z| at 100 MHz decreases monotonically for N_pad = 1 → 2 → 4 (both example nets)."""
+    z = {}
+    for n in (1, 2, 4):
+        results, _ = compute_project(_with_pads(example_inputs, n))
+        for res in results:
+            z.setdefault(res.name, []).append(_z_at(res, 1e8))
+    for name, values in z.items():
+        assert values[0] > values[1] > values[2], (name, values)
+
+
+def test_n_pads_validation_and_cache_key(example_inputs):
+    bad = _with_pads(example_inputs, 0)
+    assert "E_PWR_NPADS" in [i.code for i in validate_inputs(bad)]
+    results, issues = compute_project(bad)
+    assert not results and "E_PWR_NPADS" in [i.code for i in issues]
+    pair = PlanePair(pwr_layer=Layer(1, "P", 35e-6, 5.8e7, None, None),
+                     gnd_layer=Layer(3, "G", 35e-6, 5.8e7, None, None), d_m=0.1 * MM,
+                     er_eff=4.0, tand_eff=0.0, d_dielectric_m=0.1 * MM)
+    xy, wid, f = np.zeros((3, 2)), np.full(3, 0.3 * MM), np.geomspace(1e5, 1e9, 5)
+    k1 = cavity_cache_key(20 * MM, 20 * MM, pair, xy, wid, f, pdn_mod.ModeSettings())
+    k2 = cavity_cache_key(20 * MM, 20 * MM, pair, xy, wid, f, pdn_mod.ModeSettings(), n_pads=2)
+    assert k1 != k2
+
+
+def test_multi_pad_reduction_workers_and_exact_rcond():
+    """The N_pad reduction and the pad combination are independent of the worker count and of
+    the probe-estimate screening (§3.6, §3.9)."""
+    rng = np.random.default_rng(11)
+    F, P, N = 40, 9, 3
+    m = rng.normal(size=(F, P, P)) + 1j * rng.normal(size=(F, P, P))
+    z_cav = m + np.transpose(m, (0, 2, 1)) + 12 * np.eye(P)
+    z_load = 1 + 1j * rng.normal(size=(F, P - N))
+    zr1, rc1, _ = pdn_mod._reduce(z_cav, z_load, workers=1, n_pads=N)
+    zr4, _, _ = pdn_mod._reduce(z_cav, z_load, workers=4, n_pads=N)
+    zre, rce, _ = pdn_mod._reduce(z_cav, z_load, exact_rcond=True, n_pads=N)
+    np.testing.assert_allclose(zr4, zr1, rtol=1e-12)
+    np.testing.assert_allclose(zre, zr1, rtol=1e-12)
+    assert zr1.shape == (F, N, N)
+    zv = np.full(F, 0.05 + 0.01j)
+    zp1, _, ex1 = pdn_mod._combine_pads(zr1, zv, workers=1)
+    zp4, _, _ = pdn_mod._combine_pads(zr1, zv, workers=4)
+    zpe, rcp, _ = pdn_mod._combine_pads(zr1, zv, exact_rcond=True)
+    np.testing.assert_allclose(zp4, zp1, rtol=1e-12)
+    np.testing.assert_allclose(zpe, zp1, rtol=1e-12)
+    y = np.linalg.inv(zr1 + zv[:, None, None] * np.eye(N))
+    np.testing.assert_allclose(zp1, 1 / y.sum(axis=(1, 2)), rtol=1e-10)
+    assert np.all(rcp > 1e-14)

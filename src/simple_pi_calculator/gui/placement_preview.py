@@ -1,8 +1,8 @@
 """Synthetic plane / port placement preview (DESIGN.md §5.5 tab 3, §2.5).
 
-Pure QPainter drawing of the plane W × H of the selected PWR with the PAD port (red square), the
-decap ports (blue squares; ports carrying two capacitors get a double outline) and dimension
-labels. No computation beyond the closed-form placement of §2.5.
+Pure QPainter drawing of the plane W × H of the selected PWR with the N_pad observation pad ports
+(red squares), the decap ports (blue squares; ports carrying two capacitors get a double outline)
+and dimension labels. No computation beyond the closed-form placement of §2.5.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
+from simple_pi_calculator.constants import PAD_MARGIN_FACTOR
 from simple_pi_calculator.core.units import MM
 from simple_pi_calculator.gui.engine_bridge import PreviewPlacement
 
@@ -82,11 +83,11 @@ class PlacementPreview(QWidget):
         small.setPointSizeF(max(small.pointSizeF() - 1, 7))
         painter.setFont(small)
 
-        # D_ref guide: from PAD y to the farthest row
-        pad_xy = pl.xy_m[0]
+        n_pads = max(1, int(getattr(pl, "n_pads", 1)))
+        # D_ref guide: from the pad row (y = 0.2·D_ref) to the farthest row
         guide_pen = QPen(QColor("#999999"), 1, Qt.PenStyle.DashLine)
         painter.setPen(guide_pen)
-        y_far = pad_xy[1] + pl.d_ref_m
+        y_far = PAD_MARGIN_FACTOR * pl.d_ref_m + pl.d_ref_m
         painter.drawLine(to_px(0, y_far), to_px(pl.width_m, y_far))
 
         # ports
@@ -96,12 +97,13 @@ class PlacementPreview(QWidget):
             side = max(w * scale, 5.0)
             c = to_px(x, y)
             rect = QRectF(c.x() - side / 2, c.y() - side / 2, side, side)
-            if p == 0:
+            if p < n_pads:
                 painter.setPen(QPen(QColor("#8b0000"), 1))
                 painter.setBrush(QBrush(QColor("#d62728")))
                 painter.drawRect(rect)
             else:
-                caps = int(pl.caps_per_port[p - 1]) if p - 1 < len(pl.caps_per_port) else 1
+                j = p - n_pads
+                caps = int(pl.caps_per_port[j]) if j < len(pl.caps_per_port) else 1
                 painter.setPen(QPen(QColor("#0b3d91"), 1))
                 painter.setBrush(QBrush(QColor("#1f77b4")))
                 painter.drawRect(rect)
@@ -122,11 +124,16 @@ class PlacementPreview(QWidget):
                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignBottom,
                          f"H = {pl.height_m / MM:.2f} mm")
         painter.restore()
-        pad_px = to_px(*pad_xy)
+        pad_label = "PAD" if n_pads == 1 else f"{n_pads} PADs"
+        last_pad = pl.xy_m[n_pads - 1]
+        pad_px = to_px(float(last_pad[0]), float(last_pad[1]))
+        painter.setPen(QColor("#8b0000"))
         painter.drawText(QRectF(pad_px.x() + 8, pad_px.y() - 16, 120, 14),
-                         Qt.AlignmentFlag.AlignLeft, "PAD")
+                         Qt.AlignmentFlag.AlignLeft, pad_label)
+        painter.setPen(QColor("#202020"))
         header = self._title + ("  —  " if self._title else "") + \
-            f"D_ref = {pl.d_ref_m / MM:.2f} mm, {pl.n_decap_ports} decap port(s)"
+            f"D_ref = {pl.d_ref_m / MM:.2f} mm, N_pad = {n_pads}, " \
+            f"{pl.n_decap_ports} decap port(s)"
         painter.drawText(QRectF(4, 2, self.width() - 8, m - 6),
                          Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, header)
 

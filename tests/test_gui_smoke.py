@@ -210,6 +210,34 @@ def test_height_column_updates_and_preview_paints(make_window, qtbot):
     assert preview.paint_count > before
 
 
+
+def test_number_of_pads_column_reaches_preview_and_inputs(make_window):
+    """PWR table '# PADs' column (schema 3): edit → derived placement with N_pad pads, header
+    tooltip, validation E_PWR_NPADS, and the engine inputs carry n_pads."""
+    w = make_window()
+    w.open_project(str(EXAMPLE))
+    model = w.pwr_model
+    assert model.headerData(PwrTableModel.COL_NPADS, Qt.Orientation.Horizontal) == "# PADs"
+    assert "Number of PADs" in model.headerData(PwrTableModel.COL_NPADS, Qt.Orientation.Horizontal,
+                                                Qt.ItemDataRole.ToolTipRole)
+    row = pwr_row_index(w, "VDD_CORE")
+    idx = model.index(row, PwrTableModel.COL_NPADS)
+    assert model.data(idx) == "1"
+    assert model.setData(idx, 4)
+    assert w.project.pwr_rows[row].n_pads == 4
+    w.input_tabs.setCurrentIndex(2)
+    w.pwr_panel.select_pwr("VDD_CORE")
+    preview = w.pwr_panel.preview
+    assert preview.placement is not None and preview.placement.n_pads == 4
+    assert preview.placement.n_decap_ports == 14 and len(preview.placement.xy_m) == 18
+    assert not preview.grab().isNull()
+    inputs = w.bridge.make_inputs(w.project, None)
+    assert {p.name: p.n_pads for p in inputs.pwrs} == {"VDD_CORE": 4, "VDD_IO": 1}
+    w.project.pwr_rows[row].n_pads = 0
+    model.refresh_derived()
+    assert "E_PWR_NPADS" in model.data(idx, Qt.ItemDataRole.ToolTipRole)
+
+
 # ---------------------------------------------------------------------------------------------
 # plot, markers, unit switch (fake results, engine independent)
 # ---------------------------------------------------------------------------------------------
@@ -561,7 +589,7 @@ def test_vias_per_decap_pad_spin_box(make_window):
     assert w.project.vias.vias_per_pad == 3 and panel.vias_per_pad.value() == 3
     form = panel.form
     assert form.labelForField(panel.vias_per_pad).text() == "Vias per decap pad"
-    assert form.labelForField(panel.pad_vias).text() == "PAD vias (observation pad)"
+    assert form.labelForField(panel.pad_vias).text() == "PAD vias (per observation pad)"
     assert "EACH" in panel.vias_per_pad.toolTip() and "observation" in panel.pad_vias.toolTip()
     _, w_dec = w.bridge.port_widths_m(w.project)
     assert w_dec == pytest.approx(cluster_port_width(3, 0.2e-3, 1.0e-3), rel=1e-12)

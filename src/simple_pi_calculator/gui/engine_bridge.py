@@ -102,25 +102,45 @@ class PreviewPlacement:
     width_m: float
     height_m: float
     d_ref_m: float
-    xy_m: np.ndarray            # (P,2), row 0 = PAD
+    xy_m: np.ndarray            # (P,2), rows 0 … N_pad−1 = pads
     port_widths_m: np.ndarray   # (P,)
-    caps_per_port: np.ndarray   # (P-1,)
-    group_index: np.ndarray     # (P-1,)
+    caps_per_port: np.ndarray   # (P-N_pad,)
+    group_index: np.ndarray     # (P-N_pad,)
     issues: list[Issue] = field(default_factory=list)
+    n_pads: int = 1
 
     @property
     def n_decap_ports(self) -> int:
-        return int(len(self.xy_m) - 1)
+        return int(len(self.xy_m) - self.n_pads)
 
 
 def _local_place_ports(width_m: float, groups: Sequence[tuple[int, float, bool]],
                        w_dec: float, w_pad: float, issues: IssueCollector,
-                       source: str) -> PreviewPlacement:
+                       source: str, n_pads: int = 1) -> PreviewPlacement:
     """§2.5.1–§2.5.3 port placement (used when ``core.placement`` is unavailable)."""
     distances = [d for _, d, _ in groups]
     height, d_ref = plane_height(width_m, distances)
-    xy: list[tuple[float, float]] = [(width_m / 2.0, PAD_MARGIN_FACTOR * d_ref)]
-    widths = [w_pad]
+    n_pads = max(1, int(n_pads))
+    y_pad = PAD_MARGIN_FACTOR * d_ref
+    xy: list[tuple[float, float]] = []
+    if n_pads == 1:
+        xy.append((width_m / 2.0, y_pad))
+    else:
+        m_p = w_pad / 2.0 + X_MARGIN_FACTOR * width_m
+        l_p = width_m - 2.0 * m_p
+        if l_p < w_pad:
+            issues.error("E_PWR_WIDTH_TOO_SMALL", "Plane width is too small for the PAD row.",
+                         source)
+        span_p = max(l_p, 0.0)
+        n_row = n_pads if span_p / n_pads >= w_pad else max(1, int(math.floor(span_p / w_pad)))
+        r_p = int(math.ceil(n_pads / n_row))
+        for r in range(r_p):
+            n_r = min(n_row, n_pads - r * n_row)
+            y_r = y_pad + (r - (r_p - 1) / 2.0) * w_pad
+            y = min(max(y_r, w_pad / 2.0), height - w_pad / 2.0)
+            for i in range(n_r):
+                xy.append((m_p + (i + 0.5) * span_p / n_r, y))
+    widths = [w_pad] * n_pads
     caps: list[int] = []
     gidx: list[int] = []
     m_x = w_dec / 2.0 + X_MARGIN_FACTOR * width_m
@@ -157,7 +177,7 @@ def _local_place_ports(width_m: float, groups: Sequence[tuple[int, float, bool]]
                 j += 1
     return PreviewPlacement(width_m, height, d_ref, np.asarray(xy, dtype=float),
                             np.asarray(widths, dtype=float), np.asarray(caps, dtype=int),
-                            np.asarray(gidx, dtype=int), list(issues.issues))
+                            np.asarray(gidx, dtype=int), list(issues.issues), n_pads)
 
 
 # =============================================================================================
@@ -251,6 +271,9 @@ class EngineBridge:
             w_pad, w_dec = self.port_widths_m(project)
         except (ValueError, ZeroDivisionError, OverflowError):
             return None
+        n_pads = getattr(pwr, "n_pads", 1)
+        if isinstance(n_pads, bool) or not isinstance(n_pads, int) or n_pads < 1:
+            return None
         issues = IssueCollector()
         source = f"PWR:{pwr.name}"
         mod = _optional_module("simple_pi_calculator.core.placement")
@@ -258,20 +281,22 @@ class EngineBridge:
             try:
                 groups = [mod.DecapGroupGeom(count=int(r.count), distance_m=r.distance_mm * MM,
                                              dummy=bool(r.dummy)) for r in rows]
-                pl = mod.place_ports(width_m, groups, w_dec, w_pad, issues, source)
+                pl = mod.place_ports(width_m, groups, w_dec, w_pad, issues, source,
+                                     n_pads=n_pads)
                 return PreviewPlacement(
                     float(pl.width_m), float(pl.height_m), float(pl.d_ref_m),
                     np.asarray(pl.xy_m, dtype=float),
                     np.asarray(getattr(pl, "port_widths_m",
                                        [w_pad] + [w_dec] * (len(pl.xy_m) - 1)), dtype=float),
                     np.asarray(pl.caps_per_port, dtype=int),
-                    np.asarray(pl.group_index, dtype=int), list(issues.issues))
+                    np.asarray(pl.group_index, dtype=int), list(issues.issues),
+                    int(getattr(pl, "n_pads", 1)))
             except InputError:
                 return None
             except Exception:  # noqa: BLE001 - fall back to the local formulas
                 issues = IssueCollector()
         groups_t = [(int(r.count), r.distance_mm * MM, bool(r.dummy)) for r in rows]
-        pl = _local_place_ports(width_m, groups_t, w_dec, w_pad, issues, source)
+        pl = _local_place_ports(width_m, groups_t, w_dec, w_pad, issues, source, n_pads)
         if any(i.severity is Severity.ERROR for i in pl.issues):
             return None
         return pl

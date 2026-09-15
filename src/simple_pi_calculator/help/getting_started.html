@@ -57,14 +57,15 @@ The file format is described in <a href="input_stackup.html">Stack-up Excel file
 <p>Here you set the via geometry that is common to all PWR nets: drill diameter (0.2 mm), anti-pad
 diameter (0.5 mm), <b>via pitch</b> (distance between the PWR via and its GND return via, 1.0 mm),
 <b>vias per decap pad</b> (1 = one PWR via + one GND via per decap) and <b>PAD vias</b> (number of PWR/GND via
-pairs at the IC, 1). The read-only labels show the derived via length to the nearer plane, the loop
+pairs per IC PAD, 1). The read-only labels show the derived via length to the nearer plane, the loop
 inductance and the port widths for the selected PWR. See <a href="input_vias.html">Via settings</a>.</p>
 
 <h3>Step 4 – PWR Nets tab</h3>
-<p>Each row is one power net: name, PWR layer, GND layer and the plane width W. The grey columns are
+<p>Each row is one power net: name, PWR layer, GND layer, the plane width W and the number of PADs
+(<b># PADs</b>, 1 in the example). The grey columns are
 derived: D_ref (largest decap distance), plane height H = 1.4 × D_ref, number of ports, dielectric
 thickness d, effective εr and plane capacitance. The <b>placement preview</b> below the table draws the
-synthetic plane of the selected row: the PAD is the red square, decap via sets are blue squares (a double
+synthetic plane of the selected row: the PADs are red squares, decap via sets are blue squares (a double
 outline means two capacitors share the via set). Untick <b>Enabled</b> to skip a PWR. See
 <a href="input_pwr.html">PWR list</a>.</p>
 

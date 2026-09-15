@@ -45,8 +45,8 @@ them like a circuit:</p>
 <tr><td>Decap</td><td>Impedance from a SPICE subcircuit or S-parameter file, plus optional mounting inductance</td><td>Decap list, model files</td></tr>
 <tr><td>Decap via set</td><td>Series R + jωL of the via pairs above the planes</td><td>Via settings, stack-up depth</td></tr>
 <tr><td>Plane pair</td><td>Rectangular cavity resonator with one port per via set</td><td>Stack-up, PWR list, distances</td></tr>
-<tr><td>PAD via set</td><td>Same via model with the PAD via count</td><td>Via settings</td></tr>
-<tr><td>PAD</td><td>Ideal observation port (no die or package model)</td><td>–</td></tr>
+<tr><td>PAD via set</td><td>Same via model with the PAD via count, one via set per PAD</td><td>Via settings</td></tr>
+<tr><td>PAD(s)</td><td>N_pad ideal observation ports of one net, joined at an ideal common node (no die or package model)</td><td>PWR list (Number of PADs)</td></tr>
 </table>
 
 <h2><a name="pair"></a>2. From the stack-up to a plane pair</h2>
@@ -92,17 +92,18 @@ mean distance as the round via barrel (or the via cluster).</p>
 <p>A via is a small round tube. In the cavity model it is replaced by a small square carrying uniform current,
 with side w = r0 / 0.44705 = 1.118 × D_drill, which reproduces the inductance of the via correctly (verified to
 about 0.4 % against image theory). Several via pairs of one set form a cluster, represented by a wider square
-(GMD rule [Grover46], [Paul10]). Port 0 is the PAD; ports 1…K are the decap via sets.</p>
+(GMD rule [Grover46], [Paul10]). Ports 0…N_pad−1 are the PADs; the following K ports are the decap via sets.</p>
 
 <h2><a name="geometry"></a>5. Synthetic plane geometry</h2>
 <p><img src="img/plane_placement.png" width="760" height="583" alt="Synthetic plane with margins and decap rows"></p>
-<p class="caption">Figure 3 – Plane W × 1.4·D_ref: PAD at 0.2·D_ref from one edge, farthest row at 1.2·D_ref, 20 % margins.</p>
+<p class="caption">Figure 3 – Plane W × 1.4·D_ref: PAD row at 0.2·D_ref from one edge, farthest row at 1.2·D_ref, 20 % margins.</p>
 <p>You enter only the plane width W and a distance per decap row. The tool builds the plane so that the PAD and
 all decap rows fit with equal margins:</p>
 <pre>
 D_ref = largest Distance to PAD of the PWR net
 H     = 1.4 · D_ref
-PAD   = (W/2, 0.2·D_ref)
+PADs  : 1 PAD at (W/2, 0.2·D_ref); N_pad PADs evenly spread in x at y = 0.2·D_ref
+        with margins w_pad/2 + 0.1·W (sub-rows one port apart if crowded)
 row k : y_k = 0.2·D_ref + d_k,   ports evenly spread in x with margins w/2 + 0.1·W
 </pre>
 <p>What this approximation preserves and what it does not:</p>
@@ -129,7 +130,8 @@ Z_viapair = R_loop(f) + jω·L_loop
 Z_via,dec = Z_viapair / n_pad                   Z_via,pad = Z_viapair / (PAD vias)
 </pre>
 <p>n_pad is the number of vias on <b>each</b> decap pad: a decap via set has n_pad PWR vias and n_pad GND
-vias, i.e. n_pad via pairs in parallel. The same parallel-pair rule is used at the observation PAD. In the
+vias, i.e. n_pad via pairs in parallel. The same parallel-pair rule is used at every observation PAD (each PAD
+has its own set of PAD vias). In the
 cavity, the n_p vias of a set that cross the plane gap form one wider square port of equal geometric mean
 distance (n_p = n_pad for a decap, PAD vias for the PAD).</p>
 <p>Rule of thumb: close to 0.9 nH per mm of via length for a 0.2 mm via with 1 mm pitch when the via is much
@@ -147,19 +149,35 @@ Z_L   = Z_cap / c + Z_via,dec                   c = number of capacitors on the 
 series with one undivided via set.</p>
 
 <h2><a name="assembly"></a>8. How Z at the PAD is assembled</h2>
-<p>The cavity gives a P × P impedance matrix (P = 1 + K ports). Terminating every decap port with its load and
-"looking into" port 0 is a standard port reduction (Schur complement) [Swaminathan07], [Novak07]:</p>
+<p>The cavity gives a P × P impedance matrix (P = N_pad + K ports). Terminating every decap port with its load and
+"looking into" the PAD ports is a standard port reduction (Schur complement) [Swaminathan07], [Novak07]:</p>
 <pre>
-Z_cav = | z_00   z_0K |          port 0 = PAD, ports 1…K = decap via sets
-        | z_K0   Z_KK |
+Z_cav = | Z_PP   Z_PK |          ports 0…N_pad−1 = PADs, then K decap via sets
+        | Z_KP   Z_KK |
 
-Z_red   = z_00 − z_0K · (Z_KK + diag(Z_L))⁻¹ · z_K0
+Z_pp,red = Z_PP − Z_PK · (Z_KK + diag(Z_L))⁻¹ · Z_KP          N_pad × N_pad
+</pre>
+<p><a name="padside"></a><b>PAD side.</b> With one PAD (N_pad = 1) the reduced matrix is a single number Z_red and</p>
+<pre>
 Z_PAD   = Z_red + Z_via,pad
 Z_plane = z_00 + Z_via,pad          ("plane only" curve: no decaps)
 </pre>
+<p>With several PADs, every PAD has its own via set Z_via,pad in series, and all PADs are connected together at
+one ideal common node on the die/probe side (same voltage, no die or package impedance). The PADs are then
+driven in parallel:</p>
+<pre>
+A       = Z_pp,red + Z_via,pad · I          (via set of each PAD on the diagonal)
+Z_PAD   = 1 / ( 1ᵀ · A⁻¹ · 1 )              (sum of all entries of A⁻¹, inverted)
+Z_plane = 1 / ( 1ᵀ · (Z_PP + Z_via,pad · I)⁻¹ · 1 )
+</pre>
+<p>For one PAD this reduces exactly to Z_red + Z_via,pad. N PADs at the same spot would equal one PAD with
+N × the PAD vias; PADs spread across the width additionally shorten the spreading path to the decaps. More PADs
+lower |Z| mainly in the inductive mid-frequency range (example VDD_IO at 100 MHz: 882 mΩ with 1 PAD, 575 mΩ with 2,
+426 mΩ with 4).</p>
 <p>In words: the decaps, each seen through its vias and through the plane spreading impedance from its own
-position, all act in parallel at the PAD, including the interaction between decaps that share the plane. The
-PAD vias are added in series at the end. This is done at every frequency of the sweep.</p>
+position, all act in parallel at the PADs, including the interaction between decaps that share the plane. The
+PAD vias are added in series at each PAD, and the PADs are combined in parallel. This is done at every frequency
+of the sweep.</p>
 
 <h2><a name="shape"></a>9. What shapes the curve</h2>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
@@ -168,7 +186,7 @@ PAD vias are added in series at the end. This is done at every frequency of the 
 <tr><td>Decap resonances (dips)</td><td>ESR of the capacitors in parallel, at the series resonance of capacitance with the total loop inductance.</td><td>Count, ESR, capacitor values.</td></tr>
 <tr><td>Mid (a few MHz … 100 MHz)</td><td>Inductance: capacitor ESL + mounting + via loops + spreading in the plane, divided by the number of parallel paths. Rises at +20 dB/decade.</td><td>Via length (plane depth), via pitch, number of vias, distance, count.</td></tr>
 <tr><td>Anti-resonance peaks</td><td>Parallel resonance between the inductance of one capacitor group and the capacitance of another (or of the plane).</td><td>Mix of values, damping (ESR).</td></tr>
-<tr><td>High (hundreds of MHz …)</td><td>Plane capacitance and plane resonances; PAD via inductance.</td><td>Thin dielectric, PAD via count.</td></tr>
+<tr><td>High (hundreds of MHz …)</td><td>Plane capacitance and plane resonances; PAD via inductance.</td><td>Thin dielectric, PAD via count, number of PADs.</td></tr>
 </table>
 <p>Sanity check with the example project at 100 kHz: VDD_CORE has 10 × 100 nF + 4 × 10 µF = 41 µF →
 1/(2π·100 kHz·41 µF) = 38.8 mΩ; the computed value is 38.7 mΩ.</p>

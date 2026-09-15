@@ -109,12 +109,12 @@ forward slashes. Named project files never contain window/session data.</p>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="30%">Key</th><th>Content</th></tr>
 <tr><td><code>format</code></td><td>Always <code>"simple-pi-calculator-project"</code>.</td></tr>
-<tr><td><code>schema_version</code></td><td>File format version (currently 2).</td></tr>
+<tr><td><code>schema_version</code></td><td>File format version (currently 3).</td></tr>
 <tr><td><code>app_version</code></td><td>Program version that wrote the file.</td></tr>
 <tr><td><code>stackup</code></td><td><code>source_path</code> and <code>layers[]</code> with <code>number, name, thickness_mm, conductivity_s_per_m, dk, df</code> (null for empty).</td></tr>
-<tr><td><code>vias</code></td><td><code>drill_diameter_mm</code> (0.2), <code>antipad_diameter_mm</code> (0.5), <code>via_pitch_mm</code> (1.0), <code>vias_per_pad</code> (1, parallel vias on each decap pad), <code>pad_via_count</code> (1).</td></tr>
+<tr><td><code>vias</code></td><td><code>drill_diameter_mm</code> (0.2), <code>antipad_diameter_mm</code> (0.5), <code>via_pitch_mm</code> (1.0), <code>vias_per_pad</code> (1, parallel vias on each decap pad), <code>pad_via_count</code> (1, PWR/GND via pairs per observation PAD).</td></tr>
 <tr><td><code>advanced</code></td><td><code>via_model</code> ("pair"), <code>plating_thickness_mm</code> (0.025), <code>via_conductivity_s_per_m</code> (5.8e7), <code>mounting_inductance_nh</code> (0), <code>s2p_default_mode</code> ("series"), <code>model_search_dir</code> (null).</td></tr>
-<tr><td><code>pwr</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>name, pwr_layer, gnd_layer, width_mm, enabled</code>. The height is never stored (derived).</td></tr>
+<tr><td><code>pwr</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>name, pwr_layer, gnd_layer, width_mm, n_pads, enabled</code> (<code>n_pads</code> = Number of PADs, default 1). The height is never stored (derived).</td></tr>
 <tr><td><code>decaps</code></td><td><code>source_path</code> and <code>rows[]</code> with <code>pwr_name, model_file, count, distance_mm, dummy, subckt, s2p_mode, enabled</code>.</td></tr>
 <tr><td><code>sweep</code></td><td><code>f_start_hz</code> (1e5), <code>f_stop_hz</code> (1e9), <code>n_points</code> (400), <code>show_plane_only</code> (false).</td></tr>
 <tr><td><code>display</code></td><td><code>z_unit</code>: "ohm", "mohm" (default) or "uohm".</td></tr>
@@ -126,7 +126,7 @@ forward slashes. Named project files never contain window/session data.</p>
 <pre>
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 2,
+  "schema_version": 3,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -140,7 +140,7 @@ forward slashes. Named project files never contain window/session data.</p>
   "advanced": {"via_model": "pair", "plating_thickness_mm": 0.025, "via_conductivity_s_per_m": 5.8e7,
                "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null},
   "pwr": {"source_path": "pwr_list.xlsx", "rows": [
-    {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "enabled": true}]},
+    {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "n_pads": 1, "enabled": true}]},
   "decaps": {"source_path": "decap_list.xlsx", "rows": [
     {"pwr_name": "VDD_CORE", "model_file": "cap_0402_100nF.mod", "count": 10, "distance_mm": 8,
      "dummy": false, "subckt": null, "s2p_mode": null, "enabled": true}]},
@@ -159,6 +159,8 @@ untouched until you save, and on that first save the original is kept as
 <li>Schema 1 → 2: <code>vias.vias_per_decap</code> (PWR + GND vias of one decap via set, e.g. 2) was replaced by
 <code>vias.vias_per_pad</code> (vias on each decap pad) = vias_per_decap / 2, rounded up (2 → 1, 4 → 2). Results are
 unchanged.</li>
+<li>Schema 2 → 3: every PWR row gets <code>n_pads</code> (Number of PADs) = 1, because schema 2 had exactly one PAD per
+net. Results are unchanged.</li>
 <li>A file written by a <b>newer</b> program version cannot be opened (<code>E_PROJECT_NEWER</code>); update the program.</li>
 </ul>
 

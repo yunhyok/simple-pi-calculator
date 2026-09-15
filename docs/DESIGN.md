@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Document version | 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
+| Document version | 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
 | Status | Implementation-ready |
 | License of project | MIT |
 | Target platform | Windows 10/11 x64 (development also works on Linux/macOS) |
@@ -49,23 +49,28 @@ not a full-wave field solver.
 * One PWR plane referenced to one explicit GND plane, dielectric between them derived from the
   stack-up. The plane is rectangular, W × H: the width W is entered by the user, the height H is
   **derived** from the decap distances (H = 1.4·D_ref, §2.5).
-* Decaps and the PAD are mounted on the **Top** side (fixed in v1).
-* One PAD port near one end of the plane (y = 0.2·D_ref, centred in x).
+* Decaps and the PADs are mounted on the **Top** side (fixed in v1).
+* N_pad ≥ 1 PAD (observation/contact pad) ports per PWR net (PWR list column `Number of PADs`,
+  default 1) in a row across the width near one end of the plane (y = 0.2·D_ref; a single PAD is
+  centred in x). Each pad has its own PAD via set; the pads are joined at an ideal common node on
+  the die/probe side.
 * For each decap row assigned to the PWR: N identical decaps in a row across the plane width at
   distance d from the PAD along y.
 * Each decap via set (n_pad PWR vias on the decap's PWR pad + n_pad GND vias on its GND pad, i.e.
   n_pad PWR/GND via pairs; default n_pad = 1) is one cavity port, loaded by
   the decap impedance (one capacitor, or two in parallel for **Dummy Cap** rows, §2.6.5) in series
   with the via impedance.
-* Result Z_PAD(f) = reduced cavity impedance at the PAD port + PAD via impedance.
+* Result Z_PAD(f) = impedance at the common node of the N_pad pads: each pad port's reduced cavity
+  impedance in series with its PAD via impedance, all pads driven in parallel (§2.8); for N_pad = 1
+  simply the reduced cavity impedance at the PAD port + PAD via impedance.
 
 ### 1.3 Inputs (summary)
 
 | # | Input | Source |
 |---|---|---|
 | 1 | Stack-up | .xlsx (fuzzy headers) |
-| 2 | Common via settings (drill diameter, anti-pad diameter, **via pitch** = PWR–GND via centre spacing (default 1.0 mm), **vias per decap pad** n_pad (parallel vias on each of the two decap pads, default 1), **PAD vias (observation pad)** = PWR/GND via pairs at the PAD (default 1); mounting side fixed to Top) | GUI form |
-| 3 | PWR list (name, PWR layer, GND layer, plane width) | .xlsx import or GUI table |
+| 2 | Common via settings (drill diameter, anti-pad diameter, **via pitch** = PWR–GND via centre spacing (default 1.0 mm), **vias per decap pad** n_pad (parallel vias on each of the two decap pads, default 1), **PAD vias (per observation pad)** = PWR/GND via pairs of **each** PAD (default 1); mounting side fixed to Top) | GUI form |
+| 3 | PWR list (name, PWR layer, GND layer, plane width, **Number of PADs** N_pad ≥ 1, default 1) | .xlsx import or GUI table |
 | 4 | Decap assignment list (incl. optional Dummy Cap flag) | .xlsx import or GUI table |
 | 5 | Decap models | SPICE `.mod` subcircuits (required format), Touchstone v1 `.s2p` (optional) |
 | 6 | Sweep settings | GUI form (default 100 kHz–1 GHz, 400 log points) |
@@ -315,7 +320,8 @@ w_p    = g_p / 0.44705                                                       [m]
 Cluster arrangement (normative): the n_p cavity-crossing vias lie on a square grid of pitch
 p_c = √2·s_v (s_v = via pitch, §2.6.2; a checkerboard of alternating PWR and GND vias with nearest
 PWR–GND spacing s_v has same-net pitch √2·s_v), filled row-major with cols = ceil(√n_p) columns
-(via i at column i mod cols, row i div cols). n_p = pad_via_count for the PAD port and
+(via i at column i mod cols, row i div cols). n_p = pad_via_count for every PAD port (each of the
+N_pad pads, §2.5.1) and
 n_p = n_pad = `vias_per_pad` for every decap port (a decap via set of n_pad PWR + n_pad GND vias has
 n_pad cavity-crossing vias). For n_p = 1, g_p = r0 and w_p = 2.2369·r0.
 
@@ -329,34 +335,64 @@ single-via port (old rule) 0.20901 nH (+25 %).
 
 ### 2.5 Plane size and port placement geometry
 
-All components (decaps and PAD) are on the **Top** side. The modelled plane is a rectangle
+All components (decaps and PADs) are on the **Top** side. The modelled plane is a rectangle
 0 ≤ x ≤ W (width, user input), 0 ≤ y ≤ H (height, derived). Throughout this section a ≡ W and
-b ≡ H in the cavity formulas of §2.4; w_pad is the PAD port width and w (≡ w_dec) the common decap
+b ≡ H in the cavity formulas of §2.4; w_pad is the width of every PAD port and w (≡ w_dec) the common decap
 port width, both from §2.4.5 (for the defaults, 1 PAD via pair and 1 via per decap pad, both equal
 2.2369·r0). Because w enters the x margin m_x, the usable span L_x, the sub-row split and the sub-row
 pitch (§2.5.3) and the overlap/clipping checks, the vias per decap pad also change the placement.
 
-#### 2.5.1 Derived plane height and PAD position
+#### 2.5.1 Derived plane height and PAD row
 
 Let the enabled decap rows assigned to the PWR be k = 0 … G−1 (table order), with distance to PAD
-d_k > 0 [m], count N_k ≥ 1, and Dummy Cap flag δ_k ∈ {false, true}.
+d_k > 0 [m], count N_k ≥ 1, and Dummy Cap flag δ_k ∈ {false, true}. The PWR net has N_pad ≥ 1
+observation pads (PWR list column `Number of PADs`, integer, default 1, §4.3).
 
 ```
 D_ref = max_k d_k                      if G ≥ 1          [m]
 D_ref = W / 1.4                        if G = 0 (no decap rows: square plane H = W, plane-only result)
 H     = 1.4 · D_ref                                      [m]
-PAD   : (x_0, y_0) = (W/2, 0.2 · D_ref)
+y_0   = 0.2 · D_ref                                      [m]  PAD-row centre line
 ```
 
-So the PAD sits at a 20 % (of D_ref) margin from the y = 0 edge, the farthest decap row sits at
-y = 1.2·D_ref, leaving the same 20 % margin to the y = H edge. The PAD and the decaps are at opposite
-ends of the plane along y.
+**PAD row.** The N_pad pads are placed with the decap-row rule of §2.5.3, applied to a row of
+N_pad ports of width w_pad centred on y_0:
+
+```
+N_pad = 1:  PAD 0 : (x_0, y_0) = (W/2, 0.2 · D_ref)                    (the v1.3 single PAD, exactly)
+N_pad ≥ 2:
+    m_p    = w_pad/2 + 0.1 · W                         x margin
+    L_p    = W − 2 · m_p                               usable span
+    n_rowp = N_pad                          if L_p / N_pad ≥ w_pad
+    n_rowp = max(1, floor(L_p / w_pad))     otherwise
+    R_p    = ceil(N_pad / n_rowp)                      number of PAD sub-rows
+    for r = 0 … R_p−1:
+        n_r = min(n_rowp, N_pad − r·n_rowp)
+        y_r = y_0 + (r − (R_p − 1)/2) · w_pad
+        for i = 0 … n_r−1:
+            x_{PAD,r,i} = m_p + (i + 0.5) · L_p / n_r
+            y_{PAD,r,i} = clip(y_r, w_pad/2, H − w_pad/2)
+```
+
+(The general formula also gives x = W/2 for N_pad = 1; the single PAD is written as W/2 so that the
+v1.3 coordinates, and therefore all §8 golden values, are reproduced bit-identically.) Each pad is
+one cavity port of width w_pad = w_p(n_p = pad_via_count) (§2.4.5) with its own via set of
+`pad_via_count` PWR/GND via pairs (§2.6.4): the total number of PAD via pairs is
+N_pad · pad_via_count.
+
+So the PAD row sits at a 20 % (of D_ref) margin from the y = 0 edge, the farthest decap row sits at
+y = 1.2·D_ref, leaving the same 20 % margin to the y = H edge. The PADs and the decaps are at
+opposite ends of the plane along y. **`Distance to PAD` d_k is measured from the PAD-row centre line
+y_0 to the decap-row centre line** for any N_pad (unchanged).
 
 Validation:
 
 * d_k ≤ 0 → error `E_DECAP_DISTANCE`.
-* 0.2·D_ref < w_pad/2 (PAD port would not fit inside the plane; with a single PAD via D_ref < 2.5·w,
-  i.e. < 0.56 mm for a 0.2 mm drill) → error `E_DREF_TOO_SMALL`. Also error if w_pad > W.
+* N_pad not an integer ≥ 1 → error `E_PWR_NPADS`.
+* 0.2·D_ref < w_pad/2 (PAD row would not fit inside the plane; with a single PAD via D_ref < 2.5·w,
+  i.e. < 0.56 mm for a 0.2 mm drill) → error `E_DREF_TOO_SMALL`. Also error `E_PWR_WIDTH_TOO_SMALL`
+  if w_pad > W, or if N_pad ≥ 2 and L_p < w_pad (W < 2.5·w_pad).
+* A PAD sub-row clipped to the plane edge → warning `W_PAD_CLIPPED` (number of clipped pads).
 * d_k < (w + w_pad)/2 → warning `W_DECAP_TOO_CLOSE` (the decap port overlaps the PAD port footprint in y).
 
 #### 2.5.2 Ports per decap row
@@ -393,12 +429,13 @@ for r = 0 … R_k−1:
         y_{k,r,i} = clip(y_r, w/2, H − w/2)
 ```
 
-* P_k = 1 gives x = W/2 (centred), directly "above" the PAD.
-* **Port order** (normative, defines port indices): PAD = port 0; then rows k in table order; within a
-  row, sub-rows r ascending; within a sub-row, i ascending (left to right). The array
-  `group_index[p]` maps each decap port to k.
+* P_k = 1 gives x = W/2 (centred), directly "above" a single PAD.
+* **Port order** (normative, defines port indices): PADs = ports 0 … N_pad−1 (PAD sub-rows r
+  ascending, within a sub-row left to right); then rows k in table order; within a row, sub-rows r
+  ascending; within a sub-row, i ascending (left to right). The array `group_index[p − N_pad]` maps
+  each decap port p to k.
 * If any y was clipped → warning `W_DECAP_CLIPPED` (row k, number of clipped ports).
-* If two ports i, j (any rows, including the PAD) have |Δx| < (w_i + w_j)/2 **and**
+* If two ports i, j (any rows, including the PADs) have |Δx| < (w_i + w_j)/2 **and**
   |Δy| < (w_i + w_j)/2 (overlapping square footprints) → warning `W_PORT_OVERLAP` (e.g. two rows with almost equal distances). The computation
   still proceeds (load impedances keep the reduced matrix non-singular).
 
@@ -412,9 +449,11 @@ row 1: y = 18 mm, x = 12.0839, 24.0280, 35.9720, 47.9161 mm.
 * The real plane outline and component coordinates are **not** input. The tool synthesises a
   rectangular plane of the real width W and a height that just fits the PAD and all decap rows with
   20 % end margins. `Distance to PAD` is interpreted as the separation **along y** between the PAD
-  and the decap row; decaps spread across the width are therefore farther from the PAD
+  row and the decap row; decaps spread across the width are therefore farther from a single PAD
   (√((x − W/2)² + d_k²)) than d_k, which mimics a row of capacitors along a board edge or a
-  capacitor bank opposite the IC.
+  capacitor bank opposite the IC. Several PADs (N_pad ≥ 2) are likewise spread evenly across the
+  width (a row of IC power pins/bumps along the die edge), not clustered at the real pin-field
+  positions.
 * Because the modelled plane area is W × 1.4·D_ref, the plane capacitance and plane resonance
   frequencies are those of this synthetic plane, not of the real plane. For typical designs the
   decap capacitance dominates below the first resonance, but the plane-only curve and the resonance
@@ -550,17 +589,19 @@ Sanity (D_drill 0.2 mm, t_pl 25 µm, 1 mm, Cu): R = 1.254 mΩ @1 kHz, 1.337 mΩ 
 
 A decap always has two pads (PWR and GND). `vias_per_pad` = n_pad (integer ≥ 1, default 1) is the
 number of parallel vias on **each** decap pad, so one decap via set consists of n_pad PWR vias and
-n_pad GND vias, arranged as n_pad PWR/GND pairs at pitch s_v. The PAD (observation port) has its own
-count of PWR/GND via pairs, `pad_via_count` = n_pad,PAD. Both via sets use the same parallel-pair rule:
+n_pad GND vias, arranged as n_pad PWR/GND pairs at pitch s_v. **Each** of the N_pad PADs
+(observation pads, §2.5.1) has its own via set of `pad_via_count` = n_pad,PAD PWR/GND via pairs
+("PAD vias = vias per observation pad"), so the PAD via count grows in proportion to N_pad. Both
+kinds of via sets use the same parallel-pair rule:
 
 ```
 Z_viapair(ω)  = R_loop(ω) + jω L_loop                                  [Ω]  one PWR/GND via pair
 n_pair_dec    = n_pad = vias_per_pad        (integer ≥ 1; else E_VIA_COUNT)
 Z_via,dec(ω)  = Z_viapair(ω) / n_pair_dec                              (one decap via set)
 w_dec         = w_p(n_p = n_pair_dec)                                  (§2.4.5 cluster port)
-n_pad,PAD     = pad_via_count               (PWR/GND via pairs at the PAD, integer ≥ 1)
-Z_via,pad(ω)  = Z_viapair(ω) / n_pad,PAD
-w_pad         = w_p(n_p = n_pad,PAD)
+n_pad,PAD     = pad_via_count               (PWR/GND via pairs per PAD, integer ≥ 1)
+Z_via,pad(ω)  = Z_viapair(ω) / n_pad,PAD                               (one PAD via set = per pad)
+w_pad         = w_p(n_p = n_pad,PAD)                                   (every PAD port)
 ```
 
 Above the planes, the n pairs of one via set are treated as ideal parallel paths, i.e. the loop
@@ -665,27 +706,54 @@ Interpolation onto the sweep grid: see §3.8.
 
 ### 2.8 Combining into Z at the PAD
 
-Port 0 = PAD; ports 1…K = all decap via sets of the PWR in the port order of §2.5.3
-(K = Σ_k P_k). Partition the cavity matrix:
+Ports 0 … N_pad−1 = the PADs (set 𝒫); ports N_pad … N_pad+K−1 = all decap via sets of the PWR in
+the port order of §2.5.3 (set 𝒦, K = Σ_k P_k). Partition the cavity matrix:
 
 ```
-Z_cav = [ z_00   z_0Kᵀ ]
-        [ z_K0   Z_KK  ]         (z_0K = z_K0 by symmetry)
+Z_cav = [ Z_PP   Z_PK ]        Z_PP: N_pad × N_pad,  Z_PK = Z_KPᵀ: N_pad × K
+        [ Z_KP   Z_KK ]        (for N_pad = 1: Z_PP = z_00, Z_PK = z_0Kᵀ)
 ```
 
 Terminating decap port k with load Z_L,k means V_k = −Z_L,k I_k. Eliminating the decap ports
-(Schur complement / port reduction **[Swaminathan07], [Novak07]**):
+(Schur complement / port reduction **[Swaminathan07], [Novak07]**) leaves the N_pad-port matrix of the
+pads:
 
 ```
-Z_L,p(ω)   = Z_cap,k(p)(ω) / c_p + Z_via,dec(ω)            (§2.6.5)
-Z_red(ω)   = z_00 − z_0Kᵀ (Z_KK + diag(Z_L))⁻¹ z_K0
-Z_PAD(ω)   = Z_red(ω) + Z_via,pad(ω)                       [Ω]
-Z_plane(ω) = z_00(ω) + Z_via,pad(ω)                        ("plane only", optional curve)
+Z_L,p(ω)      = Z_cap,k(p)(ω) / c_p + Z_via,dec(ω)                      (§2.6.5)
+Z_pp,red(ω)   = Z_PP − Z_PK (Z_KK + diag(Z_L))⁻¹ Z_KP                    N_pad × N_pad
 ```
 
-All quantities are complex; the plotted value is |Z_PAD| = sqrt(Re² + Im²). The product is computed
-by solving the linear system (Z_KK + diag(Z_L)) u = z_K0 (LU, never an explicit inverse), then
-Z_red = z_00 − z_0Kᵀ u. With K = 0 (no decaps), Z_PAD = Z_plane.
+**Pads in parallel.** The pads belong to one net and are joined on the die/probe side at one
+common node (ideal: zero impedance between the pads, no die or package model, §9 item 11). Pad p
+carries current I_p through its own via set, so the common-node voltage is
+V = V_p + Z_via,pad I_p for every p, with V_𝒫 = Z_pp,red I_𝒫 and the total current I = 1ᵀ I_𝒫.
+Hence (Z_pp,red + Z_via,pad·𝟙) I_𝒫 = V·1 and
+
+```
+A(ω)          = Z_pp,red(ω) + diag(Z_via,pad(ω), …, Z_via,pad(ω))       N_pad × N_pad
+Z_PAD(ω)      = 1 / ( 1ᵀ A(ω)⁻¹ 1 )                                      [Ω]
+Z_plane(ω)    = 1 / ( 1ᵀ (Z_PP + diag(Z_via,pad))⁻¹ 1 )                  ("plane only", optional curve)
+
+N_pad = 1:  Z_red = z_00 − z_0Kᵀ (Z_KK + diag(Z_L))⁻¹ z_K0,
+            Z_PAD = Z_red + Z_via,pad,   Z_plane = z_00 + Z_via,pad       (v1.3 equations, exact)
+```
+
+All quantities are complex; the plotted value is |Z_PAD| = sqrt(Re² + Im²). The products are
+computed by solving linear systems (LU, never an explicit inverse), vectorised over frequency:
+(Z_KK + diag(Z_L)) U = Z_KP with the N_pad columns of Z_KP as right-hand sides of one factorisation,
+Z_pp,red = Z_PP − Z_PK U; then A y = 1 and Z_PAD = 1/Σ_p y_p. Both solves use the non-finite / rcond
+safeguards of §3.6 (`E_SINGULAR`). For N_pad = 1 the implementation keeps the v1.3 code path
+(u = solution for z_K0, Z_red = z_00 − z_0Kᵀu, Z_PAD = Z_red + Z_via,pad), so N_pad = 1 results are
+bit-identical to v1.3. With K = 0 (no decaps), Z_pp,red = Z_PP and Z_PAD = Z_plane.
+
+Properties (tested, §8.11): N_pad coincident pads (identical rows and columns of Z_cav) give
+exactly z + Z_via,pad/N_pad, i.e. one PAD with N_pad times the via pairs at the same port width;
+four single-via pads at the §2.4.5 cluster positions reproduce the explicit-port loop inductance
+0.16653 nH, which the one-port cluster model approximates within 0.6 %. Pads placed by §2.5.1
+(spread across the width) are **not** geometrically equivalent to one cluster pad of
+N_pad·pad_via_count vias: for the VDD_IO example, 4 pads × 1 PAD via pair give 425.9 mΩ @100 MHz
+versus 445.7 mΩ for one pad with 4 PAD via pairs (§8.11 #4), because the spread pads also shorten
+the spreading path to the decaps across the width.
 
 **Low-frequency asymptote.** No VRM or DC source is modelled, so Z_PAD → 1/(jω C_total) at low
 frequency, with C_total = C_plane + Σ decap capacitances (if the decap models have a DC-blocking
@@ -693,7 +761,7 @@ capacitor). The curve is capacitive (slope −20 dB/decade) at the low end. This
 limitation (§9); a VRM/bulk R-L element is not part of v1.
 
 Design-time sanity (bundled example VDD_CORE, §4.7): 10 × 100 nF + 4 × 10 µF = 41 µF →
-|1/(ωC_total)| at 100 kHz = 38.82 mΩ; prototype Z_PAD = 38.69 mΩ. VDD_IO (dummy row of 4 × 100 nF on
+|1/(ωC_total)| at 100 kHz = 38.82 mΩ; prototype Z_PAD = 38.69 mΩ (N_pad does not change C_total). VDD_IO (dummy row of 4 × 100 nF on
 2 via sets + 1 × 10 µF): 10.4 µF → 153.0 mΩ; prototype 152.5 mΩ.
 
 ---
@@ -825,6 +893,16 @@ also check: if any Z_red (or Z_PAD) is non-finite, or the reciprocal condition n
 (message names the first offending frequency and suggests checking `W_PORT_OVERLAP` / zero-length
 vias with ideal-short models). Legitimate cases have rcond ≫ 1e-14 (bundled example over the default grid: min rcond 2.4e-6 for VDD_CORE, 2.5e-5 for VDD_IO).
 
+**Several PADs (N_pad ≥ 2, §2.8).** The right-hand side becomes the N_pad columns of Z_KP (shape
+(F,K,N_pad), solved in the same LU call as the probe vectors), and Z_pp,red = Z_PP − Z_PK U is
+formed with a batched `matmul`. The pad combination A y = 1 (A = Z_pp,red + Z_via,pad·I, shape
+(F,N_pad,N_pad)) is a second batched solve (`pdn._combine_pads`) with its own probe estimate,
+selective exact SVD and `E_SINGULAR` check (message "ill-conditioned PAD-combination matrix");
+`min_rcond` is the minimum over both systems. Both run in frequency chunks on the worker threads of
+§3.9. Z_via,pad on the diagonal keeps A well conditioned even for coincident pads (via resistance
+> 0); A is singular only for coincident pads with zero via impedance. The plane-only curve uses
+the same combination on Z_PP without the rcond check.
+
 **rcond screening (post-v0.1.0, `pdn._reduce`).** The batched SVD is ≈ 5× the cost of the solve
 (K = 120: 0.59 s vs 0.10 s for 403 frequencies), so it is computed only where it can matter:
 
@@ -942,7 +1020,7 @@ user has set them (so the frozen build behaves the same without `threadpoolctl`)
 
 | Cache | Key | Invalidated by | Not invalidated by | Bound |
 |---|---|---|---|---|
-| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths, evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only | 32 entries and 512 MB, LRU; stored read-only |
+| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths (PAD row and decap rows), N_pad (only when ≠ 1, so N_pad = 1 keys are unchanged), evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, **Number of PADs** (pad positions and count), decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only (these enter only the loads Z_L and Z_via,pad, which are recomputed on every run; PAD vias also changes w_pad and therefore the key) | 32 entries and 512 MB, LRU; stored read-only |
 | Decap model (`DecapModelCache`, existing) | abs path, mtime, size, subckt, S2P mode | file edit | — | unbounded (small) |
 | Decap impedance (memo on each cached model object) | exact evaluation frequency vector | new model object (file edit, subckt, mode), sweep | everything else | 8 sweeps per model; warnings replayed on hits |
 
@@ -1054,13 +1132,15 @@ with 1); the remaining time is split evenly between static sums, Z(f) and the re
 | gnd_layer | yes | contains `gnd` or `ground` (and `layer`) | int |
 | pwr_layer | yes | contains `layer` (after gnd rule consumed its cell) | int |
 | width | yes | contains `width` or base ∈ {`w`, `x`} | float, length unit (mm default) |
+| n_pads | no | contains `pads`, or contains `pad` and any of `count`, `number`, `num`, `qty`, `quantity`, `#` (e.g. `Number of PADs`, `PAD Count`, `# PADs`, `PADs`) | int ≥ 1; column absent or cell empty → 1 |
 
-Rule order: gnd_layer, pwr_layer, pwr_name, width.
+Rule order: n_pads, gnd_layer, pwr_layer, pwr_name, width.
 
-A column whose header contains `height`, `length`, or `pad` (legacy files) is ignored with warning
-`W_XL_COLUMN_IGNORED` ("plane height and PAD position are derived automatically").
+A column whose header contains `height`, `length`, or `pad` (legacy files) and does **not** match
+the n_pads rule is ignored with warning `W_XL_COLUMN_IGNORED` ("plane height and PAD position are
+derived automatically"), e.g. `PAD X (mm)`, `PAD Position`.
 
-Validation: `E_PWR_NAME_DUP`, `E_PWR_LAYER_NOT_FOUND`, `E_PWR_LAYER_NOT_METAL` (either layer is
+Validation: `E_PWR_NPADS` (number of PADs not an integer ≥ 1, with cell reference), `E_PWR_NAME_DUP`, `E_PWR_LAYER_NOT_FOUND`, `E_PWR_LAYER_NOT_METAL` (either layer is
 dielectric), `E_PWR_SAME_LAYER`, `E_PWR_DIM` (width ≤ 0), `E_PWR_WIDTH_TOO_SMALL` (§2.5.3),
 `W_STACK_METAL_BETWEEN` (§2.2), `W_PWR_FAR_GND` if the PWR and GND layers are separated by more than
 3 intermediate layers, `W_PWR_NO_DECAPS` (no enabled decap rows: square plane H = W, plane-only
@@ -1068,10 +1148,12 @@ result).
 
 Example (`examples/pwr_list.xlsx`):
 
-| PWR Name | Layer Number | GND Layer Number | PWR Plane Width |
-|---|---|---|---|
-| VDD_CORE | 5 | 3 | 60 |
-| VDD_IO | 7 | 9 | 30 |
+| PWR Name | Layer Number | GND Layer Number | PWR Plane Width | Number of PADs |
+|---|---|---|---|---|
+| VDD_CORE | 5 | 3 | 60 | 1 |
+| VDD_IO | 7 | 9 | 30 | 1 |
+
+(Both nets keep one PAD so that the §8.11 golden values apply to the bundled example.)
 
 ### 4.4 Decap assignment table
 
@@ -1286,7 +1368,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | Key | Type | Notes |
 |---|---|---|
 | `format` | const `"simple-pi-calculator-project"` | |
-| `schema_version` | int ≥ 1 | current = 2 (`CURRENT_SCHEMA_VERSION`); 1 = v0.1 with `vias.vias_per_decap` |
+| `schema_version` | int ≥ 1 | current = 3 (`CURRENT_SCHEMA_VERSION`); 2 = one PAD per net (no `pwr.rows[].n_pads`); 1 = v0.1 with `vias.vias_per_decap` |
 | `app_version` | str | writer version |
 | `stackup.source_path` | str or null | |
 | `stackup.layers[]` | objects `{number:int, name:str, thickness_mm:float, conductivity_s_per_m:float or null, dk:float or null, df:float or null}` | |
@@ -1294,7 +1376,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `vias.antipad_diameter_mm` | float > drill | default 0.5 |
 | `vias.via_pitch_mm` | float > drill | default 1.0 (PWR–GND via centre spacing s_v) |
 | `vias.vias_per_pad` | int ≥ 1 | default 1; parallel vias on **each** decap pad (n_pad PWR + n_pad GND vias per decap via set, §2.6.4). Schema 1 `vias_per_decap` v → `max(1, ceil(v/2))` |
-| `vias.pad_via_count` | int ≥ 1 | default 1; PWR/GND via pairs at the observation PAD |
+| `vias.pad_via_count` | int ≥ 1 | default 1; PWR/GND via pairs **per** observation PAD (each of the N_pad pads of a net has this via set, §2.6.4) |
 | `advanced.via_model` | `"pair"`/`"goldfarb_pucel"`/`"coax"` | default pair |
 | `advanced.plating_thickness_mm` | float > 0 | default 0.025 |
 | `advanced.via_conductivity_s_per_m` | float > 0 | default 5.8e7 |
@@ -1303,7 +1385,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `advanced.model_search_dir` | str or null | |
 | `advanced.workers` | int 0…256 | default 0 = auto (`os.cpu_count()`); compute worker threads (§3.9). Optional; out of range → `W_PROJECT_VALUE`, 0 used |
 | `pwr.source_path` | str or null | |
-| `pwr.rows[]` | `{name:str, pwr_layer:int, gnd_layer:int, width_mm:float, enabled:bool}` | height is never stored (derived) |
+| `pwr.rows[]` | `{name:str, pwr_layer:int, gnd_layer:int, width_mm:float, n_pads:int, enabled:bool}` | height is never stored (derived); `n_pads` = number of observation PADs N_pad (int ≥ 1, default 1 when missing; schema 2 → 3 adds `n_pads: 1`) |
 | `decaps.source_path` | str or null | |
 | `decaps.rows[]` | `{pwr_name:str, model_file:str, count:int, distance_mm:float, dummy:bool, subckt:str or null, s2p_mode:"series"/"shunt" or null, enabled:bool}` | `dummy` default false |
 | `sweep` | `{f_start_hz, f_stop_hz, n_points, show_plane_only:bool}` | defaults 1e5, 1e9, 400, false |
@@ -1336,7 +1418,7 @@ Example named project (abridged):
 ```json
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 2,
+  "schema_version": 3,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -1351,8 +1433,8 @@ Example named project (abridged):
                "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null,
                "workers": 0},
   "pwr": {"source_path": "pwr_list.xlsx", "rows": [
-    {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "enabled": true},
-    {"name": "VDD_IO", "pwr_layer": 7, "gnd_layer": 9, "width_mm": 30, "enabled": true}]},
+    {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "n_pads": 1, "enabled": true},
+    {"name": "VDD_IO", "pwr_layer": 7, "gnd_layer": 9, "width_mm": 30, "n_pads": 1, "enabled": true}]},
   "decaps": {"source_path": "decap_list.xlsx", "rows": [
     {"pwr_name": "VDD_CORE", "model_file": "cap_0402_100nF.mod", "count": 10, "distance_mm": 8,
      "dummy": false, "subckt": null, "s2p_mode": null, "enabled": true},
@@ -1397,7 +1479,9 @@ exception becomes an `E_EXPORT` Error line — exports never raise into the GUI.
 * *One file per PWR* (`export_csv`): `<project>_<PWR>.csv` with `Frequency (Hz)`, `Re Z (Ohm)`,
   `Im Z (Ohm)`, `|Z| (Ohm)`, and if plane-only enabled `|Z| plane only (Ohm)`.
 
-A `#` header block lists version, project, UTC date and marker readouts. Numbers `%.9e`.
+A `#` header block lists version, project, PWR, `Number of PADs: N` (combined file:
+`# <PWR>: Number of PADs = N`), UTC date, marker readouts and (per-PWR files) the `info` entries,
+which include `n_pads`. Numbers `%.9e`.
 
 **XLSX**: one workbook, sheet `Summary` (inputs digest, marker readouts, info) plus one sheet per
 PWR (sheet name = PWR name truncated to 31 chars, invalid chars `[]:*?/\` replaced by `_`), same
@@ -1413,8 +1497,9 @@ Touchstone 1.1, EIA/IBIS 2002):
   (angle in degrees); frequency unit always `Hz`; reference `R = 1 Ω` default (PDN convention),
   editable. `S11 = (Z − R)/(Z + R)`; `Z` data are normalised to R (v1 rule for Z/Y).
 * Option line `# Hz S RI R 1`; `!` comments: tool name/version, project, UTC date, quantity and
-  conversion, uncoupled-ports caveat (combined), per port: PWR name, geometry summary
-  (PWR/GND layers, width, decaps, vias) and `info`.
+  conversion, uncoupled-ports caveat (combined), per port: PWR name, `Number of PADs: N (joined at
+  an ideal common node)`, geometry summary (PWR/GND layers, width, number of PADs, decaps, vias with
+  "via pair(s) per observation PAD") and `info` (incl. `n_pads`).
 * Data lines: `%.16e`; 1-port `f N11`; 2-port `f N11 N21 N12 N22`; N ≥ 3 row-major, every matrix
   row starts a new line (frequency only on the first), at most 4 pairs per line (rows wrap for
   N ≥ 5).
@@ -1474,7 +1559,7 @@ simple-pi-calculator/
 │  │  ├─ plot_widget.py            ImpedancePlot (pyqtgraph)
 │  │  ├─ worker.py                 ComputeWorker (QObject in QThread)
 │  │  ├─ persistence.py            AutosaveManager (QTimer debounce, QLockFile, session state)
-│  │  ├─ placement_preview.py      PlacementPreview widget (plane W×H, PAD, ports)
+│  │  ├─ placement_preview.py      PlacementPreview widget (plane W×H, PAD row, ports)
 │  │  ├─ message_dock.py
 │  │  └─ help_window.py
 │  ├─ help/                        *.html, style notes, img/*.png
@@ -1609,10 +1694,12 @@ class Placement:
     width_m: float             # W
     height_m: float            # H = 1.4·D_ref
     d_ref_m: float
-    xy_m: np.ndarray           # (P,2), row 0 = PAD, then port order of §2.5.3
-    group_index: np.ndarray    # (P-1,) int, row k of each decap port
-    caps_per_port: np.ndarray  # (P-1,) int ∈ {1,2}
-    port_widths_m: np.ndarray  # (P,) w_pad, then w_dec
+    xy_m: np.ndarray           # (P,2), rows 0 … N_pad−1 = PADs, then port order of §2.5.3
+    group_index: np.ndarray    # (P-N_pad,) int, row k of each decap port
+    caps_per_port: np.ndarray  # (P-N_pad,) int ∈ {1,2}
+    port_widths_m: np.ndarray  # (P,) w_pad × N_pad, then w_dec
+    n_pads: int = 1            # N_pad; properties n_ports, n_decap_ports = P − N_pad,
+                               # pad_xy_m (first pad), pads_xy_m (N_pad, 2)
 
 def plane_height(width_m: float, distances_m: Sequence[float]) -> tuple[float, float]:
     """Returns (H, D_ref) per §2.5.1 (no distances → D_ref = W/1.4, H = W)."""
@@ -1620,8 +1707,8 @@ def ports_for_row(count: int, dummy: bool) -> int: ...                 # P_k
 def caps_per_port_for_row(count: int, dummy: bool) -> list[int]: ...   # c_{k,j}, len P_k
 def place_ports(width_m: float, groups: Sequence[DecapGroupGeom],
                 decap_port_width_m: float, pad_port_width_m: float,
-                issues: IssueCollector, source: str) -> Placement: ...
-    # Placement additionally carries port_widths_m: np.ndarray (P,)
+                issues: IssueCollector, source: str, n_pads: int = 1) -> Placement: ...
+    # PAD row of §2.5.1 (E_PWR_NPADS, W_PAD_CLIPPED), then the decap rows of §2.5.3
 ```
 
 ```python
@@ -1632,7 +1719,7 @@ class ViaSettings:
     antipad_diameter_m: float
     via_pitch_m: float = 1.0e-3               # s_v, PWR–GND via centre spacing
     vias_per_pad: int = 1                     # n_pad: parallel vias on EACH decap pad
-    pad_via_count: int = 1                    # PWR/GND via pairs at the observation PAD
+    pad_via_count: int = 1                    # PWR/GND via pairs per observation PAD
     model: Literal["pair", "goldfarb_pucel", "coax"] = "pair"
     plating_thickness_m: float = 25e-6
     conductivity: float = 5.8e7
@@ -1736,6 +1823,7 @@ class PwrSpec:
     pwr_layer: int
     gnd_layer: int
     width_m: float                           # height is derived (§2.5.1)
+    n_pads: int = 1                          # N_pad observation pads (§2.5.1, §2.8)
 
 @dataclass(frozen=True)
 class DecapGroup:
@@ -1754,8 +1842,9 @@ class PwrResult:
     marker_f_hz: np.ndarray        # (≤3,)
     marker_z: np.ndarray           # complex, exact
     placement: Placement             # derived W, H, D_ref, port coordinates (for preview/export)
-    info: dict[str, float | int | str]   # C_plane, er_eff, tand_eff, d_m, W_m, H_m, D_ref_m, M, N, n_dynamic, P, h_near_m, h_r_m, L_loop, w_pad_m, w_dec_m, min_rcond
+    info: dict[str, float | int | str]   # C_plane, er_eff, tand_eff, d_m, W_m, H_m, D_ref_m, M, N, n_dynamic, P, n_pads, h_near_m, h_r_m, L_loop, w_pad_m, w_dec_m, min_rcond
     issues: list[Issue]
+    n_pads: int  (property)          # = placement.n_pads
 
 def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                 vias: ViaSettings, f_grid_hz: np.ndarray, marker_f_hz: Sequence[float],
@@ -1766,10 +1855,13 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
 def port_loads(f_hz: np.ndarray, placement: Placement, groups: Sequence[DecapGroup],
                z_decap: Sequence[np.ndarray], z_via_dec: np.ndarray,
                mounting_inductance_h: float) -> np.ndarray:
-    """(F, P-1) complex: Z_L,p = (Z_decap,k + jωL_mount)/c_p + Z_via,dec (§2.6.5)."""
+    """(F, P-N_pad) complex: Z_L,p = (Z_decap,k + jωL_mount)/c_p + Z_via,dec (§2.6.5)."""
 
-def reduce_ports(z_cav: np.ndarray, z_load: np.ndarray) -> np.ndarray:
-    """z_cav (F,P,P), z_load (F,P-1) → (F,) Z_red at port 0."""
+def reduce_ports(z_cav: np.ndarray, z_load: np.ndarray, n_pads: int = 1) -> np.ndarray:
+    """z_cav (F,P,P), z_load (F,P-N_pad) → Z_red: (F,) for N_pad = 1, else (F,N_pad,N_pad)."""
+
+def combine_pads(z_pp_red: np.ndarray, z_via_pad: np.ndarray) -> np.ndarray:
+    """(F,N,N), (F,) → (F,) Z_PAD = 1/(1ᵀ(Z_pp,red + Z_via,pad·I)⁻¹1) (§2.8)."""
 ```
 
 ```python
@@ -1821,7 +1913,7 @@ DECAP_RULES: tuple[ColumnRule, ...]
 
 # io/excel_import.py
 def read_stackup(path, issues) -> Stackup: ...
-def read_pwr_list(path, issues) -> list[PwrRow]: ...        # mm-valued rows for the GUI tables
+def read_pwr_list(path, issues) -> list[PwrRow]: ...        # mm-valued rows for the GUI tables (incl. n_pads)
 def read_decap_list(path, issues) -> list[DecapRow]: ...
 
 # io/project_io.py
@@ -1880,9 +1972,10 @@ class AutosaveStore:                      # Qt-free, unit-testable
     def quarantine(self, path: str, tag: str) -> str: ...        # rename, returns new path
 
 # io/migrations.py
-CURRENT_SCHEMA_VERSION: int = 2
+CURRENT_SCHEMA_VERSION: int = 3
 def migrate_1_to_2(doc: dict) -> dict: ...           # vias.vias_per_decap v → vias.vias_per_pad
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2}   # n → version n to n+1
+def migrate_2_to_3(doc: dict) -> dict: ...           # pwr.rows[].n_pads = 1 added
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3}
 def migrate(doc: dict, issues: IssueCollector) -> dict: ...
 
 # io/export.py
@@ -1942,19 +2035,21 @@ minimum 1100 × 700.
      default 1.000; tooltip explains that it sets the via-pair loop inductance and, for several
      pairs, the cluster size), `QSpinBox` **"Vias per decap pad"** (1–32, default 1; tooltip: number of
      parallel vias on each of the two decap pads, i.e. n PWR + n GND vias per decap via set, Z_via,dec =
-     Z_viapair/n, wider cluster port), `QSpinBox` **"PAD vias (observation pad)"** (1–400; tooltip: PWR/GND
-     via pairs at the observation PAD, independent of the decap setting), a read-only label
+     Z_viapair/n, wider cluster port), `QSpinBox` **"PAD vias (per observation pad)"** (1–400; tooltip: PWR/GND
+     via pairs of each observation PAD, independent of the decap setting; total = # PADs × count), a read-only label
      "Decaps and PAD are mounted on the Top side"; derived read-only labels per selected PWR:
      h_near mm, L_loop nH, PAD / decap port width mm. Collapsible `QGroupBox` "Advanced" (via model, plating thickness, via
      conductivity, mounting inductance per capacitor nH, s2p default mode, model search folder).
   3. *PWR Nets*: toolbar (Import…, Add, Remove, Duplicate), editable `QTableView` with
-     `PwrTableModel` (columns: Enabled ☑, PWR Name, PWR Layer, GND Layer, Width mm; derived
-     read-only: D_ref mm, Height mm, Ports, d mm, εr_eff, C_plane pF). Derived columns update when
-     the decap table changes. Cells with errors get red background and tooltip with the Issue
-     message. Below the table a `PlacementPreview` widget (QPainter, no computation) draws the
-     synthetic plane W × H of the selected PWR with the PAD (red square), decap ports (blue squares;
+     `PwrTableModel` (columns: Enabled ☑, PWR Name, PWR Layer, GND Layer, Width mm, **# PADs**
+     [spin delegate 1–10000, header tooltip "Number of PADs: observation/contact pads …", error
+     `E_PWR_NPADS` if < 1]; derived read-only: D_ref mm, Height mm, Ports (decap ports), d mm,
+     εr_eff, C_plane pF). Derived columns update when the decap table changes. Cells with errors get
+     red background and tooltip with the Issue message. Below the table a `PlacementPreview` widget
+     (QPainter, no computation) draws the synthetic plane W × H of the selected PWR with all N_pad
+     PADs (red squares, label "PAD" or "N PADs", header text "N_pad = N"), decap ports (blue squares;
      ports carrying 2 caps drawn with a double outline) and dimension labels, using
-     `core.placement.place_ports`.
+     `core.placement.place_ports(…, n_pads)`.
   4. *Decaps*: filter `QComboBox` ("All PWRs" + names; auto-synced to the selected row in the PWR
      tab); toolbar (Import…, Add, Remove); `DecapTableModel` via `QSortFilterProxyModel` (columns:
      Enabled, PWR Name [combo delegate], Decap File [line edit + "…" browse delegate], Subckt,
@@ -2155,7 +2250,10 @@ class AutosaveManager(QObject):
   `CURRENT_SCHEMA_VERSION = 1` for v0.1.0 (the pre-release geometry with `height_mm`/`pad_*` and
   side options never shipped and has no migration). **Schema 2**: `vias.vias_per_decap` →
   `vias.vias_per_pad` (`MIGRATIONS[1] = migrate_1_to_2`, §2.6.4); frozen fixture
-  `tests/data/project_v1.spical.json` (the v0.1 example project).
+  `tests/data/project_v1.spical.json` (the v0.1 example project). **Schema 3**: `pwr.rows[].n_pads`
+  (number of observation PADs; a change of meaning — schema 2 had exactly one PAD per net — hence a
+  bump although the key has a default; `MIGRATIONS[2] = migrate_2_to_3` adds `n_pads: 1`); frozen
+  fixture `tests/data/project_v2.spical.json` (the schema-2 example project).
 * **No bump** for backward-compatible additive changes: a new optional key with a default. Old
   readers ignore unknown keys; new readers default missing keys.
 * **Bump by 1** for any rename, removal, unit or meaning change. Every bump adds a pure function
@@ -2245,12 +2343,12 @@ QTextBrowser supports only Qt's "Supported HTML Subset" [QtHTML]. Pages MUST obe
 | `index.html` | What the tool does, PDN chain diagram, links to all pages |
 | `getting_started.html` | Open example project, run, read markers; step-by-step with screenshots |
 | `input_stackup.html` | Excel columns, accepted header variants, metal/dielectric detection, units, all E_/W_ codes, example table |
-| `input_vias.html` | Drill/anti-pad diameter, via pitch (PWR–GND via spacing) and its effect on loop inductance, vias per decap pad, PAD vias (observation pad) and via-cluster ports, Top-side mounting, via length to the nearer plane, via model options |
-| `input_pwr.html` | PWR list columns, GND reference choice, derived plane height, validation messages |
+| `input_vias.html` | Drill/anti-pad diameter, via pitch (PWR–GND via spacing) and its effect on loop inductance, vias per decap pad, PAD vias (= vias per observation pad) and via-cluster ports, Top-side mounting, via length to the nearer plane, via model options |
+| `input_pwr.html` | PWR list columns (incl. Number of PADs), GND reference choice, derived plane height and PAD row, validation messages |
 | `input_decaps.html` | Decap list columns, Dummy Cap option (ports and caps per port), path resolution, axial placement and its approximations |
 | `spice_models.html` | Supported .mod syntax, suffix table (incl. `1F` = 1 fF warning), PARAM scoping, examples |
 | `touchstone.html` | s2p v1 format, series-through vs shunt-through formulas, extrapolation |
-| `physics.html` | Cavity model, loss factor, port size, via model, Schur reduction, DC behaviour, equations |
+| `physics.html` | Cavity model, loss factor, port size, via model, Schur reduction, PAD side (several pads in parallel), DC behaviour, equations |
 | `results.html` | Plot interaction, unit switch, markers, export formats |
 | `project_file.html` | Saving: auto-save location and recovery, New/Open/Save/Save As/Recent, .spical.json keys and example, schema versions |
 | `limitations.html` | §9 content in user language |
@@ -2264,7 +2362,7 @@ QTextBrowser supports only Qt's "Supported HTML Subset" [QtHTML]. Pages MUST obe
 | `pdn_chain.png` | Decap → via → plane cavity → via → PAD, with Z_decap, Z_via, Z_cav, Z_PAD labels |
 | `stackup_cross_section.png` | Layer numbering from top, metal vs dielectric, PWR/GND pair, d, via lengths h_P, h_G, h_cav |
 | `cavity_ports.png` | Rectangle W × H, coordinate origin, PAD port, decap ports, square port width w |
-| `plane_placement.png` | Synthetic plane W × 1.4·D_ref: PAD at (W/2, 0.2·D_ref), rows at y = 0.2·D_ref + d_k, x margins, 20 % end margins, a multi-row group |
+| `plane_placement.png` | Synthetic plane W × 1.4·D_ref: PAD row (N_pad pads, single PAD at W/2) at y = 0.2·D_ref, rows at y = 0.2·D_ref + d_k, x margins, 20 % end margins, a multi-row group |
 | `dummy_cap.png` | Via set shared by a capacitor and its dummy neighbour; N = 5 → ports [2, 2, 1] |
 | `via_loop.png` | PWR via + GND via current loop at pitch s_v, h_near to the nearer plane face, anti-pad segment t_near, cavity segment |
 | `s2p_series_shunt.png` | Series-through vs shunt-through fixtures with formulas |
@@ -2468,6 +2566,14 @@ All with D_drill = 0.2 mm ⇒ w = 0.223690 mm; coordinates compared with abs 1e-
 9. `W_DECAP_CLIPPED`: W = 5 mm, N = 1000, d = 5 mm (63 sub-rows spanning 13.9 mm > H = 7 mm);
    all y within [w/2, H − w/2].
 10. Disabled decap rows are ignored for D_ref.
+11. **PAD row (§2.5.1):** `n_pads = 1` gives bit-identical coordinates and widths to the call without
+    `n_pads` (PAD at (15, 2) mm for VDD_IO). VDD_IO with N_pad = 4, w_pad = 0.5 mm: pads at
+    y = 2 mm, x = m_p + (i + 0.5)·L_p/4 (m_p = 3.25 mm, L_p = 23.5 mm), port widths [w_pad]×4 +
+    [w]×3, `group_index` = [0, 0, 1], decap ports unchanged at (9.055922, 7), (20.944078, 7),
+    (15, 12) mm. Crowded: W = 5 mm, d = 5 mm, N_pad = 30 → 16 + 14 pads on sub-rows y = 1 mm ∓ w/2.
+    `E_PWR_NPADS` for N_pad = 0; `E_PWR_WIDTH_TOO_SMALL` for W = 1 mm, w_pad = 0.5 mm, N_pad = 2 (not
+    for N_pad = 1); `W_PAD_CLIPPED` for W = 5 mm, d = 1 mm, N_pad = 100 with all pad y within
+    [w_pad/2, H − w_pad/2].
 
 ### 8.5 `test_via.py`
 
@@ -2548,6 +2654,9 @@ D_drill = 0.2 mm, D_antipad = 0.5 mm, Cu, t_pl = 25 µm unless noted; rel 1e-5 f
   distance, `Dummy Cap` → dummy; values `Yes`, `no`, `TRUE`, `False`, `1`, `0`, Excel booleans, empty
   map correctly; `maybe` → `E_XL_BOOL`; column absent → all false.
 * PWR list with a legacy `PWR Plane Height` column → `W_XL_COLUMN_IGNORED`, no error.
+* PWR list `Number of PADs`, `PAD Count`, `# PADs`, `PADs`, `pads`, `No. of Pads`, `Pad Qty` → n_pads
+  (values 4 and empty → 4, 1; not ignored); column absent → 1 and `PAD X (mm)` still ignored with
+  `W_XL_COLUMN_IGNORED`; values 0 and 2.5 → two `E_PWR_NPADS`.
 * Unit handling: `Thickness(um)` with value 35 → 0.035 mm; `Thickness(mil)` 1.378 → 0.0350 mm.
 * Numbers as text `"5.8E7"`; bad text → `E_XL_NUMBER` with cell reference; formula without cached
   value → `E_XL_FORMULA_NO_VALUE`.
@@ -2562,7 +2671,11 @@ Project files:
 * `E_PROJECT_NEWER` for `schema_version` = current + 1; `E_PROJECT_FORMAT` for invalid JSON / wrong `format`.
 * `migrate_1_to_2`: `vias_per_decap` 2/4/6/8/3/1/0 → `vias_per_pad` 1/2/3/4/2/1/1, input not mutated;
   the frozen `tests/data/project_v1.spical.json` loads through the chain (`I_PROJECT_MIGRATED`,
-  no unknown-key warning) with the same inputs as the current example project.
+  no unknown-key warning) with the same inputs as the current example project and `n_pads` = 1.
+* `migrate_2_to_3`: adds `n_pads: 1` to rows without it, keeps an existing value, does not mutate
+  its input; the frozen `tests/data/project_v2.spical.json` loads through the chain
+  (`I_PROJECT_MIGRATED`, `migrated_from` = 2, no unknown-key warning) with PWR rows equal to the
+  current example project and saves as schema 3 with `n_pads` = 1. Round trip keeps `n_pads` = 3.
 * Migration framework (monkeypatch `CURRENT_SCHEMA_VERSION = 2`, `MIGRATIONS = {1: fn}` renaming a
   key): v1 file loads migrated, `I_PROJECT_MIGRATED`, modified; first save creates
   `<name>.schema1.bak.spical.json`; migration function does not mutate its input; missing step →
@@ -2628,6 +2741,36 @@ Project files:
 
    On first passing implementation, store full-curve golden data in
    `tests/data/golden_example.json`; subsequent regressions compare rel 1e-6.
+
+   **Several PADs (§2.5.1, §2.8)** (`test_pdn.py`, example project, all else as above):
+
+   * (i) N_pad = 1 is the old code path: explicit `n_pads = 1` equals the example result (Z_PAD,
+     markers, plane-only) to rel 1e-12; `reduce_ports(n_pads=1)` equals an independent v0.1
+     single-PAD reduction to rel 1e-12 and `combine_pads` on the 1×1 matrix equals Z_red + Z_via,pad
+     to rel 1e-12. The golden data and the table above are unchanged.
+   * Algebra: N_pad coincident pads (identical rows/columns) with Z_via each = one pad with
+     Z_via/N_pad (rel 1e-9). Four single-via pads at the §2.4.5 cluster positions (30 × 14 mm, σ = ∞,
+     shorted decap at (15, 12) mm, 1 MHz) → 0.16653 nH (rel 5e-3), one cluster port within 2 %.
+     Coincident pads with zero via impedance → `SingularReductionError`. Worker count and exact vs
+     probe rcond do not change Z_pp,red or Z_PAD (rel 1e-12); Z_PAD equals 1/Σ(A⁻¹) (rel 1e-10).
+   * (ii) N_pad = 4 (1 PAD via pair per pad; regression of this implementation, rel 1e-3):
+
+     | \|Z\| | 100 kHz | 1 MHz | 10 MHz | 100 MHz | 1 GHz |
+     |---|---|---|---|---|---|
+     | VDD_IO, 4 PADs (P = 7) | 152.28 mΩ | 10.786 mΩ | 18.742 mΩ | 425.88 mΩ | 110.05 mΩ |
+     | VDD_CORE, 4 PADs (P = 18) | 38.724 mΩ | 3.1319 mΩ | 28.767 mΩ | 57.218 mΩ | 2.2357 Ω |
+
+     These pads are spread across the width (x = 6.084, 12.028, 17.972, 23.916 mm at y = 2 mm for
+     VDD_IO), so the case is **not** geometrically equivalent to the "VDD_IO with PAD via count = 4"
+     variant (one 1.77893 mm cluster port at (15, 2) mm: 152.3 / 10.88 / 20.79 / 445.7 / 162.5 mΩ):
+     the test checks that variant separately and that 4 spread pads give a lower |Z| @100 MHz
+     (425.9 < 445.7 mΩ); 1 GHz lies near the plane resonances and differs most. Plane-only @1 MHz
+     995.1 Ω (rel 3 %).
+   * Monotonicity: |Z| @100 MHz decreases for N_pad = 1 → 2 → 4 (VDD_IO 881.7 → 574.5 → 425.9 mΩ,
+     VDD_CORE 139.5 → 82.14 → 57.22 mΩ). (At 100 kHz |Z| rises by < 0.2 % because the lower series
+     inductance cancels less of the capacitive reactance.)
+   * `E_PWR_NPADS` from `validate_inputs` and `compute_project` for N_pad = 0; the cavity cache key
+     differs for N_pad = 1 and 2 with identical ports.
 5. A PWR with a missing model file fails alone while the other PWR still returns a result (engine
    isolates per-PWR errors). A PWR without decap rows returns the plane-only result for a W × W
    plane with `W_PWR_NO_DECAPS`.
@@ -2661,7 +2804,10 @@ Project files:
   Cap via `CheckStateRole` → Run → markers 2.306 / 18.13 / 129.0 mΩ (differ > 5 % from 3.294 / 35.42 /
   139.5 mΩ); a count typed into an open cell editor and a via count typed into a spin box are
   committed by Run; a click in the middle of a check-box cell toggles, a double click toggles once.
-* "Vias per decap pad" spin box (min 1, odd values kept) and "PAD vias (observation pad)" labels.
+* "Vias per decap pad" spin box (min 1, odd values kept) and "PAD vias (per observation pad)" labels.
+* PWR table `# PADs` column: header text and tooltip; editing VDD_CORE to 4 stores `n_pads = 4`, the
+  preview placement has N_pad = 4 and 18 ports and paints; `make_inputs` carries `n_pads`; a value
+  of 0 shows `E_PWR_NPADS` in the cell tooltip.
 
 ### 8.13 Help lint (`test_help_html.py`)
 
@@ -2706,7 +2852,14 @@ Project files:
 10. **Decap models:** only linear R, L, C, K SPICE subcircuits; no `.INCLUDE`, `.LIB`, behavioural
    sources, frequency-dependent (`LAPLACE`) elements, temperature or DC-bias derating. s2p models
    include their fixture effects; extrapolation outside data is simplistic.
-11. **IC side:** no die capacitance or package model; the PAD is an ideal observation port.
+11. **IC side:** no die capacitance or package model; the PAD is an ideal observation port. With
+    several PADs (N_pad ≥ 2) the pads are assumed to be joined at an **ideal common node** on the
+    die/probe side (zero impedance and equal voltage between the pads, no die/package/bump
+    resistance or inductance); current sharing between the pads follows only from the cavity and the
+    identical PAD via sets, and mutual inductance between the via sets of different pads is
+    neglected. The pads are spread evenly across the plane width at y = 0.2·D_ref, not at the real
+    pin-field coordinates, so a compact BGA pin field is better represented by one PAD with more PAD
+    vias (cluster port).
 12. **Numerics:** f_start ≥ 1 kHz; mode count cap 1500 per axis may under-resolve spreading
     inductance for very large planes with very small drills (warning emitted).
 13. **Persistence:** only one running instance auto-saves; computed results are not stored and are
@@ -2785,7 +2938,7 @@ the text above.
 |---|---|
 | E_XL_HEADER_NOT_FOUND, E_XL_NUMBER, E_XL_UNIT, E_XL_FORMULA_NO_VALUE, W_XL_DUP_COLUMN | §4.1 |
 | E_STACK_*, W_STACK_* | §2.2, §4.2 |
-| E_PWR_* (incl. E_PWR_WIDTH_TOO_SMALL), W_PWR_FAR_GND, W_PWR_NO_DECAPS, W_XL_COLUMN_IGNORED | §2.5, §4.3 |
+| E_PWR_* (incl. E_PWR_WIDTH_TOO_SMALL, E_PWR_NPADS), W_PAD_CLIPPED, W_PWR_FAR_GND, W_PWR_NO_DECAPS, W_XL_COLUMN_IGNORED | §2.5, §4.3 |
 | E_DECAP_FILE_NOT_FOUND, E_DECAP_FILE_TYPE, E_DECAP_DISTANCE, E_DREF_TOO_SMALL, W_DECAP_TOO_CLOSE, W_DECAP_CLIPPED, W_PORT_OVERLAP, I_DUMMY_SINGLE, E_XL_BOOL | §2.5, §2.6.5, §4.4 |
 | E_PROJECT_FORMAT, E_PROJECT_NEWER, I_PROJECT_MIGRATED, W_PROJECT_UNKNOWN_KEY | §4.7, §5.8.4 |
 | W_AUTOSAVE_CORRUPT, W_AUTOSAVE_RECOVERED_BACKUP, W_AUTOSAVE_NEWER | §5.8.3 |
@@ -2800,18 +2953,20 @@ explanations for every code in its area.
 ## Appendix B — Computation pipeline per PWR (normative order)
 
 1. Resolve PlanePair (§2.2, exact complex ε̃_eff); resolve via pitch s_v; port widths w_pad (n = PAD
-   vias, `pad_via_count`) and w_dec (n = `vias_per_pad`) from the via-cluster GMD rule (§2.4.5).
+   vias per pad, `pad_via_count`) and w_dec (n = `vias_per_pad`) from the via-cluster GMD rule (§2.4.5).
 2. Collect enabled decap rows for the PWR; load/cached DecapModel for each; evaluate Z_decap on
    f_eval = grid ∪ markers.
-3. Derive D_ref and H, place PAD and decap ports, compute caps per port (§2.5, §2.6.5); compute
-   C_plane for W × H.
+3. Derive D_ref and H, place the N_pad PADs (PAD row) and the decap ports, compute caps per port
+   (§2.5, §2.6.5); compute C_plane for W × H.
 4. Build CavityModel with a = W, b = H (mode counts §3.2, static sums §3.3) and evaluate
    Z_cav(f_eval).
 5. Via geometry h_near = z_top(nearer plane), t_near, h_R (§2.6.1); L_loop = L_pair(h_near, s_v) + L_ap
    (§2.6.2); R_loop over h_R (§2.6.3); Z_via,dec, Z_via,pad (§2.6.4).
 6. Z_L per decap port = (Z_decap,k + jωL_mount)/c_p + Z_via,dec (§2.6.5).
-7. Z_red via batched solve with non-finite / rcond check (§3.6); Z_PAD = Z_red + Z_via,pad; optional Z_plane.
-8. Split f_eval results into grid and marker arrays; fill `PwrResult.info`.
+7. Z_pp,red via batched solve with non-finite / rcond check (§3.6); N_pad = 1: Z_PAD = Z_red + Z_via,pad;
+   N_pad ≥ 2: Z_PAD = 1/(1ᵀ(Z_pp,red + Z_via,pad·I)⁻¹1) by a second checked batched solve (§2.8);
+   optional Z_plane (same combination on Z_PP).
+8. Split f_eval results into grid and marker arrays; fill `PwrResult.info` (incl. `n_pads`).
 
 ## Appendix C — Design responses to review (REVIEW-physics.md)
 
@@ -2908,3 +3063,15 @@ Deviations and clarifications found while reviewing the implementation against t
     (even total). Engine behaviour for n_pad = vias_per_decap/2 is unchanged, so the §8 golden
     values (1 PWR + 1 GND via per decap = `vias_per_pad = 1`) are unchanged (max. rel. deviation
     < 1e-6 vs `tests/data/golden_example.json`).
+14. **Schema 3, several observation PADs per PWR net (§2.5.1, §2.8, §4.3, §4.7).** New PWR list
+    column `Number of PADs` (`PwrRow.n_pads`, `PwrSpec.n_pads`, `pwr.rows[].n_pads`, GUI column
+    `# PADs`), placed as a PAD row with the decap-row rule; each pad has its own `pad_via_count`
+    via set ("PAD vias = vias per observation pad"); the pads are combined in parallel at an ideal
+    common node. `migrate_2_to_3` adds `n_pads: 1`; frozen fixture `tests/data/project_v2.spical.json`.
+    N_pad = 1 keeps the v1.3 coordinates and code path, so the §8 golden values are unchanged (rel
+    1e-12 vs the previous result). New codes `E_PWR_NPADS`, `W_PAD_CLIPPED`. Deviations/clarifications:
+    the `E_PWR_WIDTH_TOO_SMALL` span check for the PAD row applies only for N_pad ≥ 2 (a single PAD
+    keeps the v1.3 rule w_pad ≤ W); the PAD row may be split into sub-rows centred on y_0, and
+    "Distance to PAD" is still measured from y_0; the cavity cache key adds N_pad only when N_pad ≠ 1
+    (the Z-matrix itself depends only on the port coordinates and widths). N_pad = 4 on the example
+    is not equivalent to one pad with 4 PAD vias (425.9 vs 445.7 mΩ @100 MHz for VDD_IO, §8.11).

@@ -106,6 +106,7 @@ def test_csv_single_file_content(tmp_path: Path):
     text = Path(path).read_text(encoding="utf-8")
     comments = [ln for ln in text.splitlines() if ln.startswith("#")]
     assert any("VDD_IO: |Z| @ 1e+06 Hz" in ln for ln in comments)
+    assert "# VDD_IO: Number of PADs = 1" in comments
     rows = list(csv.reader(io.StringIO("\n".join(ln for ln in text.splitlines()
                                                  if not ln.startswith("#")))))
     assert rows[0] == ["Frequency (Hz)", "VDD_CORE |Z| (Ohm)", "VDD_CORE Re Z (Ohm)",
@@ -133,6 +134,11 @@ def test_csv_single_file_rejects_different_grids():
 def test_csv_per_pwr_files(tmp_path: Path):
     paths = export_csv([fake_result("A/1"), fake_result("B")], str(tmp_path), "p")
     assert [os.path.basename(p) for p in paths] == ["p_A_1.csv", "p_B.csv"]
+    res = fake_result("C")
+    res.info["n_pads"] = 4
+    path = export_csv([res], str(tmp_path), "p")[0]
+    text = Path(path).read_text(encoding="utf-8")
+    assert "# Number of PADs: 4" in text.splitlines()
 
 
 def test_safe_file_name():

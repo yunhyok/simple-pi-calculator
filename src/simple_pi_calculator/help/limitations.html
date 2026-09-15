@@ -52,7 +52,7 @@ widths are unphysical (<code>W_PORT_OVERLAP</code>).</td></tr>
 Accuracy degrades above a few GHz (warning above 3 GHz, hard limit 20 GHz). Edge fringing capacitance is neglected (a few %).</td></tr>
 <tr><td>10</td><td>Decap models</td><td>SPICE: only linear R, L, C, K subcircuits; no <code>.INCLUDE</code>/<code>.LIB</code>, behavioural sources, LAPLACE elements,
 temperature or DC-bias derating. Touchstone: the file includes its fixture parasitics; extrapolation outside the file range is simple.</td></tr>
-<tr><td>11</td><td>IC side</td><td>No die capacitance or package model; the PAD is an ideal observation port at the board/substrate surface.</td></tr>
+<tr><td>11</td><td>IC side</td><td>No die capacitance or package model; the PAD is an ideal observation port at the board/substrate surface. Several PADs of a net are joined at an ideal common node (no impedance between them) and are spread evenly across the plane width, not placed at their real coordinates.</td></tr>
 <tr><td>12</td><td>Numerics</td><td>Sweep start at 1 kHz or higher. The limit of 1500 modes per axis may slightly under-resolve the spreading inductance for very
 large planes with very small drills (<code>W_MODES_CAPPED</code>).
 Computation uses all CPU cores by default (Vias &rarr; Advanced &rarr; <a href="input_vias.html#advanced">Worker threads</a>). Plane matrices are kept in memory

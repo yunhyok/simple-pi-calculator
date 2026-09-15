@@ -494,15 +494,18 @@ def z_matrix_reference(cav: CavityModel, f_hz: np.ndarray) -> np.ndarray:
 # =============================================================================================
 def cavity_cache_key(a_m: float, b_m: float, pair: PlanePair, port_xy_m: np.ndarray,
                      port_widths_m: np.ndarray, f_eval_hz: np.ndarray,
-                     settings: ModeSettings) -> str:
+                     settings: ModeSettings, n_pads: int = 1) -> str:
     """Digest of everything the cavity Z-matrix depends on (§3.9).
 
     Plane size, the full plane pair (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port
-    coordinates and widths, the evaluation frequencies and the mode settings. Floats enter with
+    coordinates and widths (pad row and decap rows), the number of pad ports N_pad (which
+    partitions the matrix, §2.8), the evaluation frequencies and the mode settings. Floats enter with
     their exact binary value (``repr`` round-trips; arrays by their bytes).
     """
     h = hashlib.sha256()
     h.update(repr((float(a_m), float(b_m), pair, settings)).encode())
+    if int(n_pads) != 1:  # N_pad = 1 keeps the pre-v3 key
+        h.update(f"n_pads={int(n_pads)}".encode())
     for arr in (port_xy_m, port_widths_m, f_eval_hz):
         arr = np.ascontiguousarray(np.asarray(arr, dtype=float))
         h.update(repr(arr.shape).encode())

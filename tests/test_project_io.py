@@ -46,7 +46,7 @@ def _sample_project(folder: Path) -> Project:
     p.advanced.mounting_inductance_nh = 0.3
     p.advanced.model_search_dir = str(folder / "models")
     p.pwr_source_path = str(folder / "xl" / "pwr.xlsx")
-    p.pwr_rows = [PwrRow("VDD", 3, 1, 40.0, True), PwrRow("VIO", 1, 3, 20.5, False)]
+    p.pwr_rows = [PwrRow("VDD", 3, 1, 40.0, True, n_pads=3), PwrRow("VIO", 1, 3, 20.5, False)]
     p.decap_source_path = str(folder / "xl" / "decaps.xlsx")
     p.decap_rows = [
         DecapRow("VDD", str(folder / "models" / "a.mod"), 10, 8.0, dummy=True),
@@ -74,6 +74,7 @@ def test_round_trip_and_relative_paths(tmp_path: Path):
     assert doc["advanced"]["model_search_dir"] == "models"
     assert doc["decaps"]["rows"][0]["model_file"] == "models/a.mod"
     assert doc["decaps"]["rows"][0]["dummy"] is True
+    assert [r["n_pads"] for r in doc["pwr"]["rows"]] == [3, 1]
     assert doc["decaps"]["rows"][1]["model_file"] == "b.s2p"
     assert path.read_text(encoding="utf-8").startswith('{\n  "format"')
     assert not list(tmp_path.glob("*.tmp"))
@@ -291,9 +292,47 @@ def test_frozen_schema_1_fixture_loads_through_chain(tmp_path: Path):
     assert project.vias == current.vias
     assert [(r.count, r.distance_mm, r.dummy) for r in project.decap_rows] == \
         [(r.count, r.distance_mm, r.dummy) for r in current.decap_rows]
+    assert [r.n_pads for r in project.pwr_rows] == [1, 1]
     doc = project_to_dict(project, str(tmp_path), None)
-    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 2
+    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 3
     assert "vias_per_decap" not in doc["vias"] and doc["vias"]["vias_per_pad"] == 1
+    assert all(r["n_pads"] == 1 for r in doc["pwr"]["rows"])
+
+
+def test_migrate_2_to_3_adds_n_pads():
+    """Schema 3: every ``pwr.rows[]`` entry gets ``n_pads`` = 1 (schema 2 had one PAD per net);
+    the input is not mutated and an existing value is kept."""
+    doc = {"format": "simple-pi-calculator-project", "schema_version": 2,
+           "pwr": {"source_path": None, "rows": [
+               {"name": "A", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "enabled": True},
+               {"name": "B", "pwr_layer": 7, "gnd_layer": 9, "width_mm": 30, "n_pads": 4}]}}
+    snapshot = copy.deepcopy(doc)
+    out = migrations.migrate_2_to_3(doc)
+    assert doc == snapshot
+    assert [r["n_pads"] for r in out["pwr"]["rows"]] == [1, 4]
+    assert migrations.migrate_2_to_3({"format": "x", "schema_version": 2}) == \
+        {"format": "x", "schema_version": 2}
+
+
+def test_frozen_schema_2_fixture_loads_through_chain(tmp_path: Path):
+    """§5.8.4: the frozen schema-2 example (one PAD per net, no ``n_pads`` key) migrates to
+    schema 3 with ``n_pads = 1`` and gives exactly the inputs of the current example project."""
+    fixture = Path(__file__).parent / "data" / "project_v2.spical.json"
+    raw = json.loads(fixture.read_text(encoding="utf-8"))
+    assert raw["schema_version"] == 2
+    assert all("n_pads" not in r for r in raw["pwr"]["rows"])
+    project, issues = load_project(fixture)
+    assert "I_PROJECT_MIGRATED" in _codes(issues)
+    assert "W_PROJECT_UNKNOWN_KEY" not in _codes(issues)
+    assert project.migrated_from == 2
+    current, _ = load_project(Path(__file__).parent.parent / "examples"
+                              / "example_project.spical.json")
+    assert project.pwr_rows == current.pwr_rows
+    assert project.vias == current.vias
+    assert [r.n_pads for r in project.pwr_rows] == [1, 1]
+    doc = project_to_dict(project, str(tmp_path), None)
+    assert doc["schema_version"] == 3
+    assert [r["n_pads"] for r in doc["pwr"]["rows"]] == [1, 1]
 
 
 def test_migration_missing_step(monkeypatch):

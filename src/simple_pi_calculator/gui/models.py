@@ -264,18 +264,23 @@ class StackupTableModel(_BaseTableModel):
 class PwrTableModel(_BaseTableModel):
     """PWR nets with derived geometry columns (§5.5 tab 3)."""
 
-    HEADERS = ("On", "PWR Name", "PWR Layer", "GND Layer", "Width (mm)", "D_ref (mm)",
-               "H (mm)", "Ports", "d (mm)", "εr_eff", "C_plane (pF)")
+    HEADERS = ("On", "PWR Name", "PWR Layer", "GND Layer", "Width (mm)", "# PADs",
+               "D_ref (mm)", "H (mm)", "Ports", "d (mm)", "εr_eff", "C_plane (pF)")
     HEADER_TIPS = ("Enabled", "PWR Name", "Layer Number (PWR plane layer)", "GND Layer Number",
-                   "PWR Plane Width (mm)", "Reference distance D_ref = max decap distance (mm)",
+                   "PWR Plane Width (mm)",
+                   "Number of PADs: observation/contact pads of this net on the Top side (integer "
+                   "≥ 1, default 1).\nThe pads form a row across the width at y = 0.2·D_ref; each "
+                   "pad has its own via set of 'PAD vias' via pairs,\nand all pads are joined at "
+                   "an ideal common node (|Z| of the pads in parallel).",
+                   "Reference distance D_ref = max decap distance (mm)",
                    "Derived plane height H = 1.4 · D_ref (mm)", "Number of decap ports",
                    "PWR–GND plane separation d (mm)", "Effective relative permittivity",
                    "Plane capacitance of the synthetic W × H plane (pF)")
-    (COL_ENABLED, COL_NAME, COL_LAYER, COL_GND, COL_WIDTH, COL_DREF, COL_HEIGHT, COL_PORTS,
-     COL_D, COL_ER, COL_CPLANE) = range(11)
-    EDITABLE = frozenset({1, 2, 3, 4})
+    (COL_ENABLED, COL_NAME, COL_LAYER, COL_GND, COL_WIDTH, COL_NPADS, COL_DREF, COL_HEIGHT,
+     COL_PORTS, COL_D, COL_ER, COL_CPLANE) = range(12)
+    EDITABLE = frozenset({1, 2, 3, 4, 5})
     CHECK_COLUMNS = frozenset({0})
-    DERIVED = frozenset({5, 6, 7, 8, 9, 10})
+    DERIVED = frozenset({6, 7, 8, 9, 10, 11})
 
     pwrRenamed = Signal(str, str)
 
@@ -312,6 +317,9 @@ class PwrTableModel(_BaseTableModel):
             errors[self.COL_NAME] = "Duplicate PWR name (E_PWR_NAME_DUP)."
         if not (row.width_mm > 0):
             errors[self.COL_WIDTH] = "Width must be > 0 (E_PWR_DIM)."
+        n_pads = getattr(row, "n_pads", 1)
+        if isinstance(n_pads, bool) or not isinstance(n_pads, int) or n_pads < 1:
+            errors[self.COL_NPADS] = "Number of PADs must be an integer ≥ 1 (E_PWR_NPADS)."
         pair, issues = self._bridge.plane_pair(self._project, row)
         for issue in issues:
             if issue.severity is not Severity.ERROR:
@@ -368,6 +376,8 @@ class PwrTableModel(_BaseTableModel):
                 return r.gnd_layer
             if col == self.COL_WIDTH:
                 return r.width_mm if edit else f"{r.width_mm:g}"
+            if col == self.COL_NPADS:
+                return r.n_pads if edit else str(r.n_pads)
             key = {self.COL_DREF: "d_ref_mm", self.COL_HEIGHT: "height_mm",
                    self.COL_PORTS: "ports", self.COL_D: "d_mm", self.COL_ER: "er_eff",
                    self.COL_CPLANE: "c_plane_pf"}.get(col)
@@ -394,6 +404,8 @@ class PwrTableModel(_BaseTableModel):
                 return d["errors"][col]
             if col == self.COL_HEIGHT:
                 return "Derived plane height H = 1.4 · D_ref (§2.5.1)"
+            if col == self.COL_NPADS:
+                return self.HEADER_TIPS[self.COL_NPADS]
         if role == Qt.ItemDataRole.TextAlignmentRole and col >= self.COL_LAYER:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         return None
@@ -422,6 +434,11 @@ class PwrTableModel(_BaseTableModel):
                     r.gnd_layer = int(float(value))
                 elif col == self.COL_WIDTH:
                     r.width_mm = float(str(value).replace(",", "."))
+                elif col == self.COL_NPADS:
+                    number = float(str(value).replace(",", "."))
+                    if not number.is_integer():
+                        return False
+                    r.n_pads = int(number)
                 else:
                     return False
             except (TypeError, ValueError):
@@ -452,7 +469,8 @@ class PwrTableModel(_BaseTableModel):
                 name = f"{template.name}_copy{k}"
                 k += 1
             new = PwrRow(name=name, pwr_layer=template.pwr_layer, gnd_layer=template.gnd_layer,
-                         width_mm=template.width_mm, enabled=template.enabled)
+                         width_mm=template.width_mm, enabled=template.enabled,
+                         n_pads=template.n_pads)
         self.beginInsertRows(QModelIndex(), pos, pos)
         self.rows.append(new)
         self.endInsertRows()

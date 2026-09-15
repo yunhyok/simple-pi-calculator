@@ -159,3 +159,63 @@ def test_disabled_rows_ignored_for_dref():
     assert [r.model_file for r in enabled] == ["a.mod"]
     h, d_ref = plane_height(30 * MM, [r.distance_m for r in enabled])
     assert d_ref == pytest.approx(8 * MM) and h == pytest.approx(11.2 * MM)
+
+
+# ---------------------------------------------------------------------------------------------
+# Row of N_pad observation pads at y = 0.2·D_ref (§2.5.1)
+# ---------------------------------------------------------------------------------------------
+def test_single_pad_row_is_unchanged():
+    rows = [DecapGroupGeom(4, 5 * MM, True), DecapGroupGeom(1, 10 * MM)]
+    ref = place_ports(30 * MM, rows, W_DEC, W_DEC, IssueCollector(), "PWR:T")
+    one = place_ports(30 * MM, rows, W_DEC, W_DEC, IssueCollector(), "PWR:T", n_pads=1)
+    assert one.n_pads == ref.n_pads == 1
+    assert np.array_equal(one.xy_m, ref.xy_m) and np.array_equal(one.port_widths_m,
+                                                                 ref.port_widths_m)
+    assert one.xy_m[0].tolist() == [15 * MM, 0.2 * 10 * MM]
+
+
+def test_four_pads_vdd_io():
+    w_pad = 0.5 * MM
+    pl = place_ports(30 * MM, [DecapGroupGeom(4, 5 * MM, True), DecapGroupGeom(1, 10 * MM)],
+                     W_DEC, w_pad, IssueCollector(), "PWR:T", n_pads=4)
+    m_p = w_pad / 2 + 3 * MM
+    l_p = 30 * MM - 2 * m_p
+    assert pl.n_pads == 4 and pl.n_ports == 7 and pl.n_decap_ports == 3
+    assert pl.pads_xy_m[:, 0] == pytest.approx([m_p + (i + 0.5) * l_p / 4 for i in range(4)],
+                                               abs=ABS)
+    assert pl.pads_xy_m[:, 1] == pytest.approx([2 * MM] * 4, abs=ABS)
+    assert pl.port_widths_m.tolist() == [w_pad] * 4 + [W_DEC] * 3
+    assert pl.group_index.tolist() == [0, 0, 1] and pl.caps_per_port.tolist() == [2, 2, 1]
+    # decap rows keep the distance semantics: y = 0.2·D_ref + d_k
+    np.testing.assert_allclose(pl.xy_m[4:], [[9.055922 * MM, 7 * MM], [20.944078 * MM, 7 * MM],
+                                             [15 * MM, 12 * MM]], rtol=0, atol=ABS)
+
+
+def test_crowded_pads_split_into_sub_rows():
+    issues = IssueCollector()
+    pl = place_ports(5 * MM, [DecapGroupGeom(1, 5 * MM)], W_DEC, W_DEC, issues, "PWR:T",
+                     n_pads=30)
+    y = pl.pads_xy_m[:, 1]
+    # L_p = 3.77631 mm, L_p/30 < w → 16 per sub-row, 2 sub-rows symmetric about y = 1 mm
+    assert np.count_nonzero(np.isclose(y, 1 * MM - W_DEC / 2, atol=ABS)) == 16
+    assert np.count_nonzero(np.isclose(y, 1 * MM + W_DEC / 2, atol=ABS)) == 14
+    assert "W_PAD_CLIPPED" not in issues.codes()
+
+
+def test_pad_row_errors_and_clipping():
+    with pytest.raises(InputError) as exc:
+        place_ports(30 * MM, [DecapGroupGeom(1, 5 * MM)], W_DEC, W_DEC, IssueCollector(),
+                    "PWR:T", n_pads=0)
+    assert [i.code for i in exc.value.issues] == ["E_PWR_NPADS"]
+    # W = 1 mm with w_pad = 0.5 mm: L_p = 0.3 mm < w_pad for a row of 2 (but 1 PAD is allowed)
+    rows = [DecapGroupGeom(1, 10 * MM)]
+    place_ports(1 * MM, rows, W_DEC, 0.5 * MM, IssueCollector(), "PWR:T", n_pads=1)
+    with pytest.raises(InputError) as exc:
+        place_ports(1 * MM, rows, W_DEC, 0.5 * MM, IssueCollector(), "PWR:T", n_pads=2)
+    assert "E_PWR_WIDTH_TOO_SMALL" in [i.code for i in exc.value.issues]
+    issues = IssueCollector()
+    pl = place_ports(5 * MM, [DecapGroupGeom(1, 1 * MM)], W_DEC, W_DEC, issues, "PWR:T",
+                     n_pads=100)
+    assert "W_PAD_CLIPPED" in issues.codes()
+    y = pl.pads_xy_m[:, 1]
+    assert np.all(y >= W_DEC / 2 - 1e-15) and np.all(y <= pl.height_m - W_DEC / 2 + 1e-15)

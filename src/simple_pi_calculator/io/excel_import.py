@@ -12,6 +12,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
+from simple_pi_calculator.constants import DEFAULT_N_PADS
 from simple_pi_calculator.core.stackup import Layer, Stackup
 from simple_pi_calculator.core.types import DecapRow, PwrRow
 from simple_pi_calculator.core.units import MM, length_unit_factor_mm
@@ -310,6 +311,8 @@ def read_pwr_list(path: str | os.PathLike[str], issues: IssueCollector) -> list[
         pwr_layer = _cell_int(table, values, row, "pwr_layer", issues)
         gnd_layer = _cell_int(table, values, row, "gnd_layer", issues)
         width = _cell_number(table, values, row, "width", issues)
+        n_pads = _cell_int(table, values, row, "n_pads", issues, code="E_PWR_NPADS") \
+            if "n_pads" in table.mapping else None
         ok = True
         for field_name, value in (("pwr_name", name), ("pwr_layer", pwr_layer),
                                   ("gnd_layer", gnd_layer)):
@@ -323,8 +326,15 @@ def read_pwr_list(path: str | os.PathLike[str], issues: IssueCollector) -> list[
             ok = False
         elif width is _BAD:
             ok = False
+        if n_pads is _BAD:
+            ok = False
         if not ok:
             continue
+        if n_pads is None:
+            n_pads = DEFAULT_N_PADS  # column absent or cell empty → one PAD
+        elif n_pads < 1:
+            issues.error("E_PWR_NPADS", f"PWR '{name}': number of PADs must be ≥ 1 (found "
+                         f"{n_pads}).", source, table.ref(row, "n_pads"))
         if width <= 0.0:
             issues.error("E_PWR_DIM", f"PWR '{name}': plane width must be > 0.", source,
                          table.ref(row, "width"))
@@ -337,7 +347,7 @@ def read_pwr_list(path: str | os.PathLike[str], issues: IssueCollector) -> list[
             issues.error("E_PWR_SAME_LAYER", f"PWR '{name}': PWR and GND layer are both "
                          f"{pwr_layer}.", source, table.ref(row, "pwr_layer"))
         rows.append(PwrRow(name=name, pwr_layer=pwr_layer, gnd_layer=gnd_layer,
-                           width_mm=float(width), enabled=True))
+                           width_mm=float(width), enabled=True, n_pads=int(n_pads)))
     return rows
 
 

@@ -141,9 +141,10 @@ cover. Formula cells need a cached value (open and save the file in Excel once).
 | PWR layer | yes | `Layer Number`, `PWR Layer` | metal layer number |
 | GND layer | yes | `GND Layer Number`, `Ground Layer` | metal layer number (the reference plane) |
 | Width | yes | `PWR Plane Width`, `Width (mm)` | plane width W > 0 |
+| Number of PADs | no | `Number of PADs`, `PAD Count`, `# PADs`, `PADs` | N_pad, integer ≥ 1 (absent/empty → 1): observation/contact pads of the net, each with its own PAD via set; GUI column `# PADs` |
 
-Columns containing `height`, `length` or `pad` are ignored with a warning — the plane height and
-PAD position are derived (see below).
+Other columns containing `height`, `length` or `pad` (e.g. `PAD X`) are ignored with a warning — the
+plane height and PAD positions are derived (see below).
 
 **Decap assignment list:**
 
@@ -167,8 +168,8 @@ Touchstone: v1 `.s2p` with `# HZ|KHZ|MHZ|GHZ S MA|DB|RI R z0`.
 
 **Other inputs (GUI):** via drill and anti-pad diameter, via pitch (PWR–GND via spacing, default
 1.0 mm), **vias per decap pad** (parallel vias on each of the two decap pads, default 1, i.e. one
-PWR via + one GND via per decap; 2 and 4 are common), **PAD vias (observation pad)** (PWR/GND via
-pairs at the IC PAD, default 1), sweep 100 kHz–1 GHz with 400
+PWR via + one GND via per decap; 2 and 4 are common), **PAD vias (per observation pad)** (PWR/GND via
+pairs of each IC PAD, default 1; a net with N_pad PADs has N_pad × PAD vias pairs), sweep 100 kHz–1 GHz with 400
 log points by default (1 kHz ≤ f ≤ 20 GHz, 10–5000 points).
 
 ## Modelling summary
@@ -203,8 +204,9 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
 
 * **Synthetic plane and placement.** For each PWR net the plane is a W × H rectangle with the real
   width W and a derived height H = 1.4 × D_ref, where D_ref is the largest decap distance (H = W when
-  the net has no decaps). The PAD sits at (W/2, 0.2·D_ref); each decap row lies at
-  y = 0.2·D_ref + distance, its via sets spread evenly across the width with a 10 % margin (several
+  the net has no decaps). The N_pad PADs form a row at y = 0.2·D_ref spread across the width like a
+  decap row (a single PAD sits at (W/2, 0.2·D_ref)); each decap row lies at
+  y = 0.2·D_ref + distance (measured from the PAD row), its via sets spread evenly across the width with a 10 % margin (several
   sub-rows if they do not fit). Plane capacitance and resonances are those of this synthetic plane.
 * **All components on the Top side.** Vias run from the top surface to the nearer of the PWR/GND
   planes.
@@ -224,7 +226,9 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
   of N capacitors uses ceil(N/2) via sets carrying two capacitors each (the last one a single
   capacitor when N is odd).
 * **Result** = cavity impedance at the PAD port with all decap ports loaded (Schur-complement
-  reduction) plus the PAD via impedance. No VRM, package or die: the curve is capacitive at low
+  reduction) plus the PAD via impedance. With several PADs, every PAD port (with its own via set in
+  series) is driven in parallel from an ideal common node on the die side:
+  Z_PAD = 1 / (1ᵀ (Z_pp,red + Z_via,pad·I)⁻¹ 1). No VRM, package or die: the curve is capacitive at low
   frequency. Marker values are evaluated exactly at 1, 10 and 100 MHz, not interpolated.
 
 ## Performance

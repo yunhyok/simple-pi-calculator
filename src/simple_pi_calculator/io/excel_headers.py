@@ -143,12 +143,23 @@ def _p_width(base: str, unit: str | None) -> bool:
     return "width" in base or base in {"w", "x"}
 
 
+def _p_n_pads(base: str, unit: str | None) -> bool:
+    """``Number of PADs``, ``PAD Count``, ``# PADs``, ``PADs``, ``No. of PADs``, ``N PADs`` …"""
+    if "pads" in base:
+        return True
+    return "pad" in base and _has(base, "count", "number", "num", "qty", "quantity", "#")
+
+
 def pwr_ignored_column(base: str, unit: str | None) -> bool:
-    """Legacy PWR-list columns ignored with ``W_XL_COLUMN_IGNORED`` (§4.3)."""
+    """Legacy PWR-list columns ignored with ``W_XL_COLUMN_IGNORED`` (§4.3): plane height/length and
+    PAD position columns (but not the PAD count column, schema 3)."""
+    if _p_n_pads(base, unit):
+        return False
     return _has(base, "height", "length", "pad")
 
 
 PWR_RULES: tuple[ColumnRule, ...] = (
+    ColumnRule("n_pads", False, _p_n_pads, "int", "Number of PADs"),
     ColumnRule("gnd_layer", True, _p_gnd_layer, "int", "GND Layer Number"),
     ColumnRule("pwr_layer", True, _p_pwr_layer, "int", "Layer Number"),
     ColumnRule("pwr_name", True, _p_pwr_name, "str", "PWR Name"),

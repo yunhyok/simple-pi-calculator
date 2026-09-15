@@ -38,8 +38,8 @@ matter.</p>
 <tr><td>Anti-pad diameter (mm)</td><td>0.500</td><td>Diameter of the clearance hole in the plane through which a via passes without connecting, D_antipad. Must be larger than the drill.</td></tr>
 <tr><td>Via pitch (mm)</td><td>1.000</td><td><b>Centre-to-centre distance between a PWR via and its GND return via</b>, s_v (0.02–20 mm). Sets the via-pair loop inductance and, for several via pairs, the size of the via cluster.</td></tr>
 <tr><td>Vias per decap pad</td><td>1</td><td>Number of parallel vias on <b>each</b> of the two pads of one decap (its PWR pad and its GND pad), n_pad ≥ 1. 1 = one PWR via + one GND via; 2 = two PWR vias + two GND vias (common); 4 = four of each. One decap via set therefore has n_pad PWR/GND via pairs in parallel.</td></tr>
-<tr><td>PAD vias (observation pad)</td><td>1</td><td>Number of PWR/GND via <b>pairs</b> connecting the IC PAD, where |Z| is observed, to the planes (1 = one PWR via + one GND via). Independent of the decap setting.</td></tr>
-<tr><td>Mounting side</td><td>Top (fixed)</td><td>Decaps and the PAD are mounted on the Top side (layer 1) in this version.</td></tr>
+<tr><td>PAD vias (per observation pad)</td><td>1</td><td><b>PAD vias = vias per observation pad</b>: number of PWR/GND via <b>pairs</b> connecting <b>each</b> IC PAD, where |Z| is observed, to the planes (1 = one PWR via + one GND via). A net with N_pad PADs (<a href="input_pwr.html#pads">Number of PADs</a> in the PWR list) has N_pad such via sets, i.e. N_pad × PAD vias pairs in total. Independent of the decap setting.</td></tr>
+<tr><td>Mounting side</td><td>Top (fixed)</td><td>Decaps and PADs are mounted on the Top side (layer 1) in this version.</td></tr>
 </table>
 
 <p>Below the form, read-only labels show for the PWR selected in the PWR Nets tab: <b>h_near</b> (via length
@@ -91,18 +91,20 @@ PWR via's anti-pad, i.e. s_v &lt; (D_drill + D_antipad)/2, you get <code>W_VIA_P
 
 <h2><a name="counts"></a>Vias per decap pad and PAD vias</h2>
 <p>A decap has two pads. With <b>n_pad</b> vias on each pad, one decap via set consists of n_pad PWR vias and
-n_pad GND vias, i.e. n_pad PWR/GND via pairs in parallel. The observation PAD has its own count of via pairs.
+n_pad GND vias, i.e. n_pad PWR/GND via pairs in parallel. Every observation PAD has its own via set with
+its own count of via pairs (PAD vias = vias per observation pad); with several PADs per net the number of PAD
+via sets grows with the number of PADs.
 More via pairs reduce the impedance in two ways:</p>
 <ul>
 <li><b>Above the planes</b> the pairs act as parallel paths: the via impedance of a decap via set is
-Z_viapair / n_pad, and at the PAD Z_viapair / (PAD vias). Mutual inductance between
+Z_viapair / n_pad, and at each PAD Z_viapair / (PAD vias). Mutual inductance between
 neighbouring pairs is neglected, which is optimistic for closely packed vias.</li>
 <li><b>Inside the cavity</b> the vias of one set spread the current over a larger area. The set is represented
 by one wider square port (a via cluster), which reduces the spreading inductance between PAD and decaps.</li>
 </ul>
 <p><img src="img/cavity_ports.png" width="760" height="388" alt="Cavity ports: square equivalent of a via and of a via cluster"></p>
 <p class="caption">Figure 2 – A via, or a checkerboard cluster of vias, is replaced by a square port of equal geometric
-mean distance. n_p = PAD vias for the PAD, vias per decap pad (n_pad) for a decap.</p>
+mean distance. n_p = PAD vias for each PAD, vias per decap pad (n_pad) for a decap.</p>
 <p>The cluster is assumed to be a checkerboard of alternating PWR and GND vias with nearest spacing s_v,
 filled row by row. Port widths for drill 0.2 mm and pitch 1.0 mm: 1 pair 0.224 mm, 2 pairs 0.841 mm,
 4 pairs 1.779 mm, 9 pairs 3.451 mm. The anti-pad diameter does not change the port width. Wider decap ports

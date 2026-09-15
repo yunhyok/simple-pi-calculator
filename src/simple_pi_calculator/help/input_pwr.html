@@ -25,7 +25,7 @@ th { background-color: #e3ebf5; text-align: left; }
 <h1>Input: PWR list</h1>
 
 <p>The PWR list defines the power nets to analyse. Each row names a PWR plane layer, the GND plane layer used
-as its reference and the width of the plane. Rows can be imported from Excel (<b>PWR Nets</b> tab ▸
+as its reference, the width of the plane and the number of observation PADs of the net. Rows can be imported from Excel (<b>PWR Nets</b> tab ▸
 <b>Import…</b> or <b>File ▸ Import ▸ PWR List…</b>) or entered directly with <b>Add</b>. <b>Duplicate</b>
 copies the selected row, which is handy for variants.</p>
 
@@ -35,9 +35,9 @@ copies the selected row, which is handy for variants.</p>
 <h2><a name="example"></a>Example</h2>
 <p>Bundled file <code>examples/pwr_list.xlsx</code>:</p>
 <table border="1" cellspacing="0" cellpadding="4">
-<tr><th>PWR Name</th><th>Layer Number</th><th>GND Layer Number</th><th>PWR Plane Width</th></tr>
-<tr><td>VDD_CORE</td><td>5</td><td>3</td><td>60</td></tr>
-<tr><td>VDD_IO</td><td>7</td><td>9</td><td>30</td></tr>
+<tr><th>PWR Name</th><th>Layer Number</th><th>GND Layer Number</th><th>PWR Plane Width</th><th>Number of PADs</th></tr>
+<tr><td>VDD_CORE</td><td>5</td><td>3</td><td>60</td><td>1</td></tr>
+<tr><td>VDD_IO</td><td>7</td><td>9</td><td>30</td><td>1</td></tr>
 </table>
 
 <h2><a name="columns"></a>Columns</h2>
@@ -47,23 +47,25 @@ copies the selected row, which is handy for variants.</p>
 <tr><td>PWR layer</td><td>yes</td><td>contains <code>layer</code> (tested after the GND rule): <code>Layer Number</code>, <code>PWR Layer</code></td><td>Layer number (integer) of the PWR plane.</td></tr>
 <tr><td>PWR name</td><td>yes</td><td>contains <code>pwr</code>, <code>power</code> or <code>net</code> together with <code>name</code>, or exactly <code>PWR</code>, <code>Net</code>, <code>Rail</code>: <code>PWR Name</code>, <code>Net Name</code>, <code>Power Name</code></td><td>Unique name, case-sensitive, surrounding spaces removed. Decap rows refer to it.</td></tr>
 <tr><td>Width</td><td>yes</td><td>contains <code>width</code>, or exactly <code>W</code> or <code>X</code>: <code>PWR Plane Width</code>, <code>Width (mm)</code></td><td>Plane width W, number &gt; 0, unit from header (default mm; also um, mil, in, m).</td></tr>
+<tr><td>Number of PADs</td><td>no</td><td>contains <code>pads</code>, or <code>pad</code> together with <code>count</code>, <code>number</code>, <code>num</code>, <code>qty</code> or <code>#</code>: <code>Number of PADs</code>, <code>PAD Count</code>, <code># PADs</code>, <code>PADs</code></td><td>N_pad, integer ≥ 1: the observation/contact pads of this net on the Top side (for example IC power bumps or probe pads). Column absent or cell empty → 1. Each pad has its own via set of <a href="input_vias.html#counts">PAD vias</a>. See <a href="#pads">Several PADs</a>.</td></tr>
 </table>
-<p>The rules are applied in the order GND layer → PWR layer → PWR name → Width, so <code>GND Layer Number</code>
+<p>The rules are applied in the order Number of PADs → GND layer → PWR layer → PWR name → Width, so <code>GND Layer Number</code>
 is never mistaken for the PWR layer, whatever the column order. The general header, sheet (name containing
 <code>pwr</code> or <code>power</code>) and number rules are the same as for the
 <a href="input_stackup.html#headers">stack-up</a>.</p>
-<p>Columns whose header contains <code>height</code>, <code>length</code> or <code>pad</code> (from older templates) are
-ignored with <code>W_XL_COLUMN_IGNORED</code>: the plane height and the PAD position are derived
-automatically.</p>
+<p>Other columns whose header contains <code>height</code>, <code>length</code> or <code>pad</code> (from older templates,
+e.g. <code>PAD X (mm)</code>, <code>PAD Position</code>) are ignored with <code>W_XL_COLUMN_IGNORED</code>: the plane
+height and the PAD positions are derived automatically.</p>
 
 <h2><a name="table"></a>The PWR Nets table</h2>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="22%">Column</th><th>Meaning</th></tr>
 <tr><td>Enabled</td><td>Untick to exclude the net from the computation.</td></tr>
 <tr><td>PWR Name, PWR Layer, GND Layer, Width mm</td><td>Editable inputs as above.</td></tr>
+<tr><td># PADs</td><td>Number of PADs N_pad (editable, integer ≥ 1, default 1). Hover over the header for a short explanation.</td></tr>
 <tr><td>D_ref mm <i>(derived)</i></td><td>Largest Distance to PAD of the enabled decap rows of this net.</td></tr>
 <tr><td>Height mm <i>(derived)</i></td><td>Plane height H = 1.4 × D_ref (see below).</td></tr>
-<tr><td>Ports <i>(derived)</i></td><td>Number of cavity ports: 1 PAD port + all decap via sets.</td></tr>
+<tr><td>Ports <i>(derived)</i></td><td>Number of decap cavity ports (all decap via sets). The cavity has N_pad further ports, one per PAD.</td></tr>
 <tr><td>d mm, εr_eff <i>(derived)</i></td><td>Dielectric thickness and effective permittivity between PWR and GND (from the stack-up).</td></tr>
 <tr><td>C_plane pF <i>(derived)</i></td><td>Capacitance of the synthetic plane W × H.</td></tr>
 </table>
@@ -87,17 +89,35 @@ the second cavity is not modelled (conservative).</li>
 <li><b>Width W</b> (your input) – the extent of the plane across which the decaps of a row are spread.
 Use the width of the plane region between the IC and the capacitors (for a plane that is wider than the
 area where decaps can be placed, use the width of that area).</li>
-<li><b>Height H = 1.4 × D_ref</b> (derived) – D_ref is the largest decap distance of the net. The PAD sits at
+<li><b>Height H = 1.4 × D_ref</b> (derived) – D_ref is the largest decap distance of the net. The PAD row sits at
 0.2 × D_ref from one end, the farthest decap row at 1.2 × D_ref, leaving a 20 % margin at both ends.</li>
 <li>If the net has no enabled decap rows, the plane is square (H = W) and only the plane-only result is
 computed (<code>W_PWR_NO_DECAPS</code>).</li>
 </ul>
 <p><img src="img/plane_placement.png" width="760" height="583" alt="Synthetic plane with PAD, decap rows and margins"></p>
-<p class="caption">Figure 1 – Synthetic plane W × 1.4·D_ref with the PAD near the bottom edge and the decap rows at their
-distances. The x margin is 10 % of W plus half a port.</p>
+<p class="caption">Figure 1 – Synthetic plane W × 1.4·D_ref with the PAD row near the bottom edge (one PAD centred, or
+N_pad PADs spread across the width) and the decap rows at their distances. The x margin is 10 % of W plus half a port.</p>
 <p>Example: VDD_CORE, W = 60 mm, decap rows at 8 mm and 15 mm → D_ref = 15 mm, H = 21 mm, PAD at (30, 3) mm,
 C_plane = 480 pF (d = 0.1 mm, εr = 4.3). VDD_IO, W = 30 mm, rows at 5 mm and 10 mm → H = 14 mm, PAD at
 (15, 2) mm, C_plane = 160 pF.</p>
+<h2><a name="pads"></a>Several PADs</h2>
+<p>A power net of an IC is usually connected through several pads or bumps. Enter their number in
+<b>Number of PADs</b> (N_pad):</p>
+<ul>
+<li><b>Placement.</b> The N_pad PADs form a row across the width at y = 0.2 × D_ref, spread evenly inside the
+same x margins as a decap row (10 % of W plus half a PAD port). If they do not fit next to each other, the row
+is split into sub-rows one PAD port apart, centred on y = 0.2 × D_ref. One PAD is placed exactly at (W/2, 0.2 × D_ref), as before.</li>
+<li><b>Distance to PAD</b> is still measured from the PAD row (y = 0.2 × D_ref) to the decap row.</li>
+<li><b>Vias.</b> Every PAD has its own via set of <a href="input_vias.html#counts">PAD vias</a> PWR/GND via pairs, so
+the total number of PAD vias is N_pad × PAD vias.</li>
+<li><b>Result.</b> All PADs belong to the same net and are assumed to be joined at an ideal common node on the
+die/probe side; |Z| is the impedance of all PADs (each with its via set) in parallel. See
+<a href="physics.html#assembly">How Z at the PAD is assembled</a>.</li>
+<li>Four PADs spread across the width are not the same as one PAD with 4 PAD vias: one PAD with more PAD vias
+models a compact pin field (cluster port), several PADs model pads distributed along the plane edge.</li>
+</ul>
+<p>The placement preview below the table draws all PADs in red and labels their number.</p>
+
 <p>The consequences of this approximation are explained in <a href="physics.html#geometry">Modelling concept</a>
 and <a href="limitations.html">Limitations</a>.</p>
 
@@ -109,7 +129,9 @@ and <a href="limitations.html">Limitations</a>.</p>
 <tr><td><code>E_PWR_LAYER_NOT_METAL</code></td><td>The PWR or GND layer is a dielectric.</td><td>Use copper layer numbers; check the Conductivity column of the stack-up.</td></tr>
 <tr><td><code>E_PWR_SAME_LAYER</code></td><td>PWR layer and GND layer are identical.</td><td>Choose a different GND layer.</td></tr>
 <tr><td><code>E_PWR_DIM</code></td><td>Width missing, zero or negative.</td><td>Enter the width in mm.</td></tr>
-<tr><td><code>E_PWR_WIDTH_TOO_SMALL</code></td><td>The width is too small to hold even one decap port with the 10 % margins (W &lt; 2.5 × port width).</td><td>Increase W (with a 0.2 mm drill, W must be at least about 0.56 mm).</td></tr>
+<tr><td><code>E_PWR_NPADS</code></td><td>Number of PADs is not an integer ≥ 1.</td><td>Enter 1 or more (empty Excel cell = 1).</td></tr>
+<tr><td><code>W_PAD_CLIPPED</code></td><td>Many PADs on a narrow plane: some PAD sub-rows were moved inside the plane edge.</td><td>Check the preview; reduce the number of PADs or increase W or the decap distances.</td></tr>
+<tr><td><code>E_PWR_WIDTH_TOO_SMALL</code></td><td>The width is too small to hold even one decap port with the 10 % margins (W &lt; 2.5 × port width), or – with several PADs – to hold one PAD port inside the margins.</td><td>Increase W (with a 0.2 mm drill, W must be at least about 0.56 mm).</td></tr>
 <tr><td><code>E_STACK_NO_DIELECTRIC</code></td><td>No dielectric between PWR and GND layer.</td><td>Check the layer numbers.</td></tr>
 <tr><td><code>W_STACK_METAL_BETWEEN</code></td><td>A metal layer lies between PWR and GND; it is treated as cleared.</td><td>Prefer the adjacent GND plane.</td></tr>
 <tr><td><code>W_PWR_FAR_GND</code></td><td>More than 3 layers between PWR and GND.</td><td>Check that this reference is intended.</td></tr>

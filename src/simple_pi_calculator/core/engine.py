@@ -116,6 +116,11 @@ def _validate_pwr(inputs: ProjectInputs, pwr: PwrSpec, issues: IssueCollector) -
     source = f"PWR:{pwr.name}"
     if not (pwr.width_m > 0.0):
         issues.error("E_PWR_DIM", f"PWR {pwr.name}: width must be > 0.", source)
+    n_pads = getattr(pwr, "n_pads", 1)
+    if isinstance(n_pads, bool) or not isinstance(n_pads, (int, float)) or int(n_pads) != n_pads \
+            or n_pads < 1:
+        issues.error("E_PWR_NPADS", f"PWR {pwr.name}: number of PADs must be an integer ≥ 1 "
+                     f"(got {n_pads}).", source)
     if inputs.stackup.layers:
         check_pwr_layers(inputs.stackup, pwr.pwr_layer, pwr.gnd_layer, issues, source)
     paths = []

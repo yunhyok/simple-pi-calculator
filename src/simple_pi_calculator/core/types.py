@@ -60,6 +60,8 @@ class PwrRow:
     gnd_layer: int
     width_mm: float
     enabled: bool = True
+    #: N_pad observation pads on the Top side (§2.5.1, §2.8; schema 3, default 1)
+    n_pads: int = 1
 
     @property
     def width_m(self) -> float:

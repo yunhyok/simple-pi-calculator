@@ -27,6 +27,7 @@ from simple_pi_calculator.constants import (
     DEFAULT_F_START_HZ,
     DEFAULT_F_STOP_HZ,
     DEFAULT_MOUNTING_INDUCTANCE_NH,
+    DEFAULT_N_PADS,
     DEFAULT_N_POINTS,
     DEFAULT_PAD_VIA_COUNT,
     DEFAULT_PLATING_THICKNESS_MM,
@@ -300,7 +301,8 @@ def project_to_dict(project: Project, anchor_dir: str | None,
         "pwr": {"source_path": _path_out(project.pwr_source_path, anchor_dir),
                 "rows": [{"name": r.name, "pwr_layer": int(r.pwr_layer),
                           "gnd_layer": int(r.gnd_layer), "width_mm": float(r.width_mm),
-                          "enabled": bool(r.enabled)} for r in project.pwr_rows]},
+                          "n_pads": int(r.n_pads), "enabled": bool(r.enabled)}
+                         for r in project.pwr_rows]},
         "decaps": {"source_path": _path_out(project.decap_source_path, anchor_dir),
                    "rows": [{"pwr_name": r.pwr_name,
                              "model_file": _path_out(r.model_file, anchor_dir),
@@ -348,7 +350,7 @@ _SECTION_KEYS = {
     "display": {"z_unit"},
 }
 _LAYER_KEYS = {"number", "name", "thickness_mm", "conductivity_s_per_m", "dk", "df"}
-_PWR_ROW_KEYS = {"name", "pwr_layer", "gnd_layer", "width_mm", "enabled"}
+_PWR_ROW_KEYS = {"name", "pwr_layer", "gnd_layer", "width_mm", "n_pads", "enabled"}
 _DECAP_ROW_KEYS = {"pwr_name", "model_file", "count", "distance_mm", "dummy", "subckt",
                    "s2p_mode", "enabled"}
 
@@ -573,7 +575,8 @@ def project_from_dict(doc: dict, anchor_dir: str | None,
             pwr_layer=rd.integer(row, "pwr_layer", where),
             gnd_layer=rd.integer(row, "gnd_layer", where),
             width_mm=rd.number(row, "width_mm", where),
-            enabled=rd.boolean(row, "enabled", where, True)))
+            enabled=rd.boolean(row, "enabled", where, True),
+            n_pads=rd.integer(row, "n_pads", where, DEFAULT_N_PADS)))
 
     # decaps
     dc = rd.section(doc, "decaps")
@@ -736,7 +739,8 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
         mounting_inductance_h=a.mounting_inductance_nh * NH,
     )
     pwrs = [PwrSpec(name=r.name, pwr_layer=r.pwr_layer, gnd_layer=r.gnd_layer,
-                    width_m=r.width_mm * MM) for r in project.pwr_rows if r.enabled]
+                    width_m=r.width_mm * MM, n_pads=int(r.n_pads))
+            for r in project.pwr_rows if r.enabled]
     return ProjectInputs(
         stackup=project.stackup(),
         vias=vias,

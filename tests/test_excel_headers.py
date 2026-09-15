@@ -314,3 +314,28 @@ def test_decap_distance_and_count_errors(make_xlsx):
     codes = _codes(issues)
     assert {"E_DECAP_DISTANCE", "E_DECAP_COUNT", "E_XL_MODE"} <= set(codes)
     assert decaps[0].s2p_mode == "shunt" and decaps[0].subckt == "CAP1"
+
+
+@pytest.mark.parametrize("header", ["Number of PADs", "PAD Count", "# PADs", "PADs", "pads",
+                                    "No. of Pads", "Pad Qty"])
+def test_pwr_list_number_of_pads_header(make_xlsx, header):
+    path = make_xlsx([["PWR Name", "Layer Number", "GND Layer Number", "PWR Plane Width", header],
+                      ["VDD", 5, 3, 60, 4], ["VIO", 7, 9, 30, None]], sheet="PWR")
+    issues = IssueCollector()
+    rows = read_pwr_list(path, issues)
+    assert not issues.issues
+    assert [r.n_pads for r in rows] == [4, 1]
+    assert not pwr_ignored_column(*normalize_header(header))
+
+
+def test_pwr_list_number_of_pads_absent_and_invalid(make_xlsx):
+    path = make_xlsx([["PWR Name", "Layer Number", "GND Layer Number", "Width", "PAD X (mm)"],
+                      ["VDD", 5, 3, 60, 30]], sheet="PWR")
+    issues = IssueCollector()
+    rows = read_pwr_list(path, issues)
+    assert rows[0].n_pads == 1 and "W_XL_COLUMN_IGNORED" in _codes(issues)
+    path = make_xlsx([["PWR Name", "Layer Number", "GND Layer Number", "Width", "# PADs"],
+                      ["VDD", 5, 3, 60, 0], ["VIO", 7, 9, 30, 2.5]], name="bad.xlsx", sheet="PWR")
+    issues = IssueCollector()
+    read_pwr_list(path, issues)
+    assert _codes(issues).count("E_PWR_NPADS") == 2

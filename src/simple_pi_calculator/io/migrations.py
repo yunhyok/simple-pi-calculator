@@ -14,7 +14,7 @@ from typing import Callable
 
 from simple_pi_calculator.errors import IssueCollector, ProjectFormatError, ProjectTooNewError
 
-CURRENT_SCHEMA_VERSION: int = 2
+CURRENT_SCHEMA_VERSION: int = 3
 
 
 def migrate_1_to_2(doc: dict) -> dict:
@@ -36,7 +36,22 @@ def migrate_1_to_2(doc: dict) -> dict:
     return out
 
 
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2}
+def migrate_2_to_3(doc: dict) -> dict:
+    """Schema 2 → 3: every ``pwr.rows[]`` entry gets ``n_pads`` (number of observation pads of the
+    net, §2.5.1/§2.8). Schema 2 had exactly one PAD per net, so the value is 1 and every schema-2
+    project computes identically. Existing ``n_pads`` keys and malformed rows are left untouched
+    for the reader.
+    """
+    out = copy.deepcopy(doc)
+    pwr = out.get("pwr")
+    if isinstance(pwr, dict) and isinstance(pwr.get("rows"), list):
+        for row in pwr["rows"]:
+            if isinstance(row, dict):
+                row.setdefault("n_pads", 1)
+    return out
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2, 2: migrate_2_to_3}
 
 
 def schema_version_of(doc: dict) -> int:
@@ -77,5 +92,6 @@ def migrate(doc: dict, issues: IssueCollector) -> dict:
     return out
 
 
-__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "migrate_1_to_2", "schema_version_of",
+__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "migrate_1_to_2", "migrate_2_to_3",
+           "schema_version_of",
            "ProjectFormatError", "ProjectTooNewError"]
