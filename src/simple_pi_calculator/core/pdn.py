@@ -94,16 +94,67 @@ def port_loads(f_hz: np.ndarray, placement: Placement, groups: Sequence[DecapGro
     return zcap[:, k] / caps[None, :] + zv[:, None]
 
 
-def _reduce_chunk(z_cav: np.ndarray, z_load: np.ndarray, s: int, e: int, check: bool
+#: number of fixed random probe vectors solved together with the Schur right-hand side (§3.6)
+RCOND_PROBES = 8
+#: safety factor γ: frequencies whose estimate is below γ·RCOND_MIN get an exact SVD (§3.6)
+RCOND_SCREEN_FACTOR = 1.0e4
+#: the frequencies with the smallest estimates that always get an exact SVD (min_rcond, §3.6)
+RCOND_EXACT_WORST = 8
+
+_probe_cache: dict[int, np.ndarray] = {}
+
+
+def _probe_vectors(K: int) -> np.ndarray:
+    """(K, k) fixed complex Gaussian unit vectors (deterministic seed, independent of workers)."""
+    v = _probe_cache.get(K)
+    if v is None:
+        rng = np.random.default_rng(0x5EED + K)
+        k = min(RCOND_PROBES, K)
+        v = rng.standard_normal((K, k)) + 1j * rng.standard_normal((K, k))
+        v /= np.linalg.norm(v, axis=0)
+        v.setflags(write=False)
+        _probe_cache[K] = v
+    return v
+
+
+def _rcond_svd(a: np.ndarray) -> np.ndarray:
+    """Exact 2-norm reciprocal condition numbers σ_min/σ_max of a batch (0 if non-finite)."""
+    with np.errstate(all="ignore"):
+        finite = np.all(np.isfinite(a), axis=(-2, -1))
+        rc = np.zeros(a.shape[0])
+        if np.any(finite):
+            sv = np.linalg.svd(a[finite], compute_uv=False)
+            r = sv[:, -1] / sv[:, 0]
+            rc[finite] = np.where(np.isfinite(r), r, 0.0)
+    return rc
+
+
+def _reduce_chunk(z_cav: np.ndarray, z_load: np.ndarray, s: int, e: int, check: bool,
+                  exact: bool = False
                   ) -> tuple[np.ndarray, np.ndarray, SingularReductionError | None]:
-    """Schur reduction of frequencies s:e (§3.6); singular pivots are returned, not raised."""
+    """Schur reduction of frequencies s:e (§3.6); singular pivots are returned, not raised.
+
+    Returns ``(z_red, rc, error)``. With ``check`` and not ``exact``, ``rc`` is the cheap
+    estimate of §3.6: the probe vectors are solved in the same LAPACK call as the right-hand side
+    (one factorisation), L = max_j ‖A⁻¹v_j‖ ≤ ‖A⁻¹‖₂ and rc_est = 1/(‖A‖_F·L). With ``exact`` the
+    SVD rcond is returned (v0.1.0 behaviour, tests/reference).
+    """
     K = z_cav.shape[1] - 1
     diag = np.arange(K)
     a = z_cav[s:e, 1:, 1:].copy()
     a[:, diag, diag] += z_load[s:e]
     rhs = z_cav[s:e, 1:, 0:1]
+    probe = check and not exact
+    if probe:
+        v = _probe_vectors(K)
+        b = np.empty((e - s, K, 1 + v.shape[1]), dtype=complex)
+        b[:, :, 0:1] = rhs
+        b[:, :, 1:] = v[None, :, :]
+    else:
+        b = rhs
     try:
-        u = np.linalg.solve(a, rhs)[..., 0]
+        with np.errstate(all="ignore"):
+            x = np.linalg.solve(a, b)
     except np.linalg.LinAlgError:
         bad = s
         for i in range(s, e):
@@ -114,25 +165,31 @@ def _reduce_chunk(z_cav: np.ndarray, z_load: np.ndarray, s: int, e: int, check: 
                 break
         return (np.empty(0, dtype=complex), np.empty(0),
                 SingularReductionError("singular port-reduction matrix", bad, 0.0))
+    u = x[..., 0]
     z_red = z_cav[s:e, 0, 0] - np.sum(z_cav[s:e, 0, 1:] * u, axis=-1)
-    if check:
-        with np.errstate(all="ignore"):
-            if np.all(np.isfinite(a)):
-                sv = np.linalg.svd(a, compute_uv=False)
-                rc = sv[:, -1] / sv[:, 0]
-                rc = np.where(np.isfinite(rc), rc, 0.0)
-            else:
-                rc = np.zeros(e - s)
-    else:
+    if not check:
         rc = np.ones(e - s)
+    elif exact:
+        rc = _rcond_svd(a)
+    else:
+        with np.errstate(all="ignore"):
+            norm_a = np.sqrt(np.sum(a.real ** 2 + a.imag ** 2, axis=(1, 2)))
+            lower_inv = np.sqrt(np.sum(x[..., 1:].real ** 2 + x[..., 1:].imag ** 2,
+                                       axis=1)).max(axis=1)
+            rc = 1.0 / (norm_a * lower_inv)
+            rc = np.where(np.isfinite(rc) & np.all(np.isfinite(x), axis=(1, 2)), rc, 0.0)
     return z_red, rc, None
 
 
 def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
             cancel: Callable[[], bool] | None = None, workers: int = 1,
-            progress: Callable[[float], None] | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Z_red and per-frequency rcond (1.0 when there are no decap ports).
+            progress: Callable[[float], None] | None = None,
+            exact_rcond: bool = False) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Z_red, per-frequency rcond and the mask of frequencies whose rcond is exact (§3.6).
 
+    Without ``exact_rcond`` the SVD is only computed where the probe estimate is below
+    γ·RCOND_MIN (γ = 1e4) and at the RCOND_EXACT_WORST frequencies with the smallest estimates;
+    elsewhere ``rcond`` holds the estimate. The ``E_SINGULAR`` decision uses exact values only.
     Frequency chunks run on ``workers`` threads (§3.9); results and error reporting (first
     offending frequency) are independent of ``workers``.
     """
@@ -142,7 +199,7 @@ def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
     K = z_cav.shape[1] - 1
     z00 = z_cav[:, 0, 0].copy()
     if K == 0:
-        return z00, np.ones(F)
+        return z00, np.ones(F), np.ones(F, dtype=bool)
     # working set ≈ 3 (K×K) complex copies per frequency (chunks sized by memory, not flops:
     # very small chunks lose the parallel gain to GIL hand-offs between the numpy calls)
     per_f = 48.0 * K * K
@@ -153,7 +210,8 @@ def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
         if progress is not None:
             progress(i / n)
 
-    parts = run_chunks(lambda sl: _reduce_chunk(z_cav, z_load, sl.start, sl.stop, check),
+    parts = run_chunks(lambda sl: _reduce_chunk(z_cav, z_load, sl.start, sl.stop, check,
+                                                exact_rcond),
                        chunks, workers, cancel=cancel, on_done=done,
                        cancelled_exc=CancelledError)
     errors = [err for _, _, err in parts if err is not None]
@@ -161,16 +219,41 @@ def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
         raise min(errors, key=lambda err: err.index)
     z_red = np.concatenate([zr for zr, _, _ in parts])
     rcond = np.concatenate([rc for _, rc, _ in parts])
+    if not check or exact_rcond:
+        exact = np.ones(F, dtype=bool)
+    else:
+        # exact SVD where the estimate cannot rule out rcond < RCOND_MIN, and at the worst few
+        refine = rcond < RCOND_SCREEN_FACTOR * RCOND_MIN
+        refine[np.argsort(rcond, kind="stable")[:RCOND_EXACT_WORST]] = True
+        idx = np.nonzero(refine)[0]
+        if cancel is not None and cancel():
+            raise CancelledError("computation cancelled")
+        diag = np.arange(K)
+        exact_parts = run_chunks(
+            lambda sl: _rcond_svd(z_cav[idx[sl], 1:, 1:]
+                                  + _diag_batch(z_load[idx[sl]], K, diag)),
+            plan_chunks(idx.size, per_f, workers,
+                        target_bytes=min(SCHUR_CHUNK_BYTES, CHUNK_TARGET_BYTES)),
+            workers, cancel=cancel, cancelled_exc=CancelledError)
+        rcond = rcond.copy()
+        rcond[idx] = np.concatenate(exact_parts) if exact_parts else rcond[idx]
+        exact = refine
     if check:
         nonfinite = ~np.isfinite(z_red)
-        bad = nonfinite | (rcond < RCOND_MIN)
+        bad = nonfinite | (exact & (rcond < RCOND_MIN))
         if np.any(bad):
             i = int(np.argmax(bad))
             raise SingularReductionError(
                 "non-finite reduced impedance" if nonfinite[i] else
                 f"ill-conditioned port-reduction matrix (rcond = {rcond[i]:.3g})", i,
                 float(rcond[i]))
-    return z_red, rcond
+    return z_red, rcond, exact
+
+
+def _diag_batch(z_load: np.ndarray, K: int, diag: np.ndarray) -> np.ndarray:
+    d = np.zeros((z_load.shape[0], K, K), dtype=complex)
+    d[:, diag, diag] = z_load
+    return d
 
 
 def reduce_ports(z_cav: np.ndarray, z_load: np.ndarray) -> np.ndarray:
@@ -334,9 +417,10 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     check_cancel()
     z_load = port_loads(f_eval, placement, groups, z_decap, z_via_dec, vias.mounting_inductance_h)
     try:
-        z_red, rcond = _reduce(z_cav, z_load, check=True, cancel=cancel, workers=workers,
-                               progress=lambda x: report(STAGE_REDUCE
-                                                         + (1.0 - STAGE_REDUCE) * 0.999 * x))
+        z_red, rcond, rcond_exact = _reduce(z_cav, z_load, check=True, cancel=cancel,
+                                            workers=workers,
+                                            progress=lambda x: report(
+                                                STAGE_REDUCE + (1.0 - STAGE_REDUCE) * 0.999 * x))
     except SingularReductionError as exc:
         f_bad = f_eval[min(exc.index, f_eval.size - 1)]
         err = issues.error(
@@ -368,7 +452,7 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         "L_loop": l_loop,
         "w_pad_m": w_pad,
         "w_dec_m": w_dec,
-        "min_rcond": float(np.min(rcond)) if rcond.size else 1.0,
+        "min_rcond": float(np.min(rcond[rcond_exact])) if np.any(rcond_exact) else 1.0,
     }
     return PwrResult(
         name=pwr.name,

@@ -50,10 +50,20 @@ readout table. This page explains how to read and use them, how to set the sweep
 <tr><td>Pan</td><td>Left-drag inside the plot</td></tr>
 <tr><td>Zoom both axes</td><td>Mouse wheel</td></tr>
 <tr><td>Zoom one axis</td><td>Right-drag (horizontal = frequency, vertical = |Z|), or wheel over an axis</td></tr>
-<tr><td>More options</td><td>Right-click for the context menu (view all, axis ranges, export)</td></tr>
-<tr><td>Reset to full range</td><td><b>View ▸ Reset zoom</b> or Ctrl+0</td></tr>
+<tr><td>More options</td><td>Right-click for the context menu (Reset view, View All, axis ranges, export)</td></tr>
+<tr><td>Reset view</td><td><b>⟲ Reset view</b> button above the plot tabs, <b>View ▸ Reset View</b>, <b>Ctrl+D</b> (also Ctrl+0), or right-click ▸ Reset view</td></tr>
 </table>
+<p><b>Reset view</b> restores the default view that a fresh computation shows: both axes logarithmic, the range
+fitted to all <i>visible</i> curves with the standard small margin, and the markers shown or hidden as set under
+<b>View ▸ Show Markers</b>. The context-menu entry <b>View All</b> does the same. In the default view the plot
+keeps fitting itself automatically, e.g. when you hide a curve in the <i>All PWRs</i> tab or switch the |Z| unit;
+once you pan or zoom, the view stays where you put it (a unit switch only rescales the vertical range) until the
+next Reset view.</p>
 <p>The zoom state of each plot is remembered by the auto-save and restored with the next start.</p>
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="note"><b>Shortcut change.</b> Ctrl+D now resets the plot view everywhere in the application;
+<b>Edit ▸ Duplicate Row</b> moved to Ctrl+Shift+D.</td></tr>
+</table>
 
 <h2><a name="units"></a>Switching the |Z| unit</h2>
 <p><b>View ▸ |Z| unit</b> selects Ω, mΩ (default) or µΩ. The axis label, marker labels, hover readout and readout
@@ -104,17 +114,53 @@ and row concerned. Hide or show the dock with <b>View ▸ Show Messages dock</b>
 <a href="troubleshooting.html">Troubleshooting</a> for every code.</p>
 
 <h2><a name="export"></a>Export</h2>
+<p>All exports are in <b>File ▸ Export</b> and in the <b>↧ Export</b> button above the plot tabs. Every successful
+export adds an <b>Info</b> line <code>I_EXPORT</code> with the written path(s) to the Messages dock; a failure
+(for example a read-only folder) adds an <b>Error</b> line <code>E_EXPORT</code> instead.</p>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="24%">Menu</th><th>Output</th></tr>
-<tr><td>File ▸ Export ▸ Results CSV…</td><td>One file per PWR, named <code>&lt;project&gt;_&lt;PWR&gt;.csv</code>, in the chosen folder. Columns
+<tr><td>Results CSV…</td><td>A dialog chooses the layout.<br>
+<b>One file</b> (default): column <code>Frequency (Hz)</code>, then for each PWR <code>&lt;PWR&gt; |Z| (Ohm)</code>,
+<code>&lt;PWR&gt; Re Z (Ohm)</code>, <code>&lt;PWR&gt; Im Z (Ohm)</code> and, if computed,
+<code>&lt;PWR&gt; |Z| plane only (Ohm)</code>. All PWRs of one computation share the frequency grid.<br>
+<b>One file per PWR</b>: <code>&lt;project&gt;_&lt;PWR&gt;.csv</code> in the chosen folder with columns
 <code>Frequency (Hz)</code>, <code>Re Z (Ohm)</code>, <code>Im Z (Ohm)</code>, <code>|Z| (Ohm)</code> and, if enabled,
-<code>|Z| plane only (Ohm)</code>. A header block lists an input summary and the marker readouts.</td></tr>
-<tr><td>File ▸ Export ▸ Results XLSX…</td><td>One workbook with a <code>Summary</code> sheet (inputs and marker readouts) and one sheet per PWR with
+<code>|Z| plane only (Ohm)</code>. A header block of <code>#</code> lines lists the marker readouts.</td></tr>
+<tr><td>Results XLSX…</td><td>One workbook with a <code>Summary</code> sheet (inputs and marker readouts) and one sheet per PWR with
 the same columns (sheet names are shortened to 31 characters; characters <code>[]:*?/\</code> are replaced by <code>_</code>).</td></tr>
-<tr><td>File ▸ Export ▸ Plot PNG…</td><td>Image of the visible plot (1600 px wide) with the current zoom, unit and markers.</td></tr>
+<tr><td>Touchstone…</td><td>Touchstone v1 file(s), see <a href="#touchstone">below</a>: one 1-port <code>.s1p</code> per PWR
+(<code>&lt;project&gt;_&lt;PWR&gt;.s1p</code> in a folder), or one N-port file <code>.sNp</code> with N = number of PWRs.</td></tr>
+<tr><td>Plot PNG…</td><td>Image of the visible plot (1600 px wide) with the current zoom, unit and markers.</td></tr>
+<tr><td>All Plots…</td><td>Choose a folder, format (PNG or SVG), width and height in pixels. Writes <code>All_PWRs.png</code> (or
+<code>.svg</code>) plus one image per PWR tab, named after the PWR with characters that are not allowed in file names
+replaced by <code>_</code> (for example <code>VDD/IO</code> → <code>VDD_IO.png</code>). The images use the current |Z| unit,
+marker and plane-only settings and the <b>default view</b>, unless <b>Keep current zoom</b> is ticked. Tabs you never
+opened are rendered completely as well; the on-screen plots are not changed.</td></tr>
 </table>
-<p>Numbers are written with 10 significant digits in Ω, so exported data can be post-processed or overlaid with
-measurements in other tools. Complex values allow you to recombine results (e.g. add a VRM model externally).</p>
+<p>Numbers are written in Ω with full precision (CSV: 10 significant digits, Touchstone: 17), so exported data can be
+post-processed or overlaid with measurements in other tools. Complex values allow you to recombine results (e.g.
+add a VRM model externally).</p>
+
+<h3><a name="touchstone"></a>Touchstone conventions</h3>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Option</th><th>Meaning</th></tr>
+<tr><td>Parameter</td><td><b>S</b> (default): S11 = (Z − R) / (Z + R). <b>Z</b>: impedance, written <i>normalised</i> to R
+(Touchstone v1 rule; with R = 1 Ω the numbers are the impedance in Ω).</td></tr>
+<tr><td>Data format</td><td><b>RI</b> (default): real and imaginary part. <b>MA</b>: magnitude and angle in degrees.</td></tr>
+<tr><td>Frequency unit</td><td>Always Hz.</td></tr>
+<tr><td>Reference R</td><td>Default <b>1 Ω</b>, the usual PDN convention: with mΩ impedances S11 stays close to −1 but
+is still resolved well, whereas with 50 Ω it would differ from −1 only in the fifth digit. Editable.</td></tr>
+</table>
+<p>The option line is, for example, <code># Hz S RI R 1</code>. Comment lines (<code>!</code>) at the top give the tool name
+and version, project, export date (UTC), the PWR name of each port and a geometry summary (PWR/GND layers, width,
+decaps, vias). Data follow the Touchstone 1.1 layout: 1- and 2-port data on one line per frequency (2-port order
+N11 N21 N12 N22); for 3 ports and more each matrix row starts on a new line with at most four value pairs per line.
+Files open in circuit simulators and in most S-parameter viewers.</p>
+<table border="0" cellspacing="0" cellpadding="8" width="100%">
+<tr><td class="warn"><b>Uncoupled ports.</b> In the N-port file every PWR net is one port and all off-diagonal
+parameters are exactly 0. Each net was computed on its own synthetic plane, so no coupling between nets is
+modelled – do not use the file to study noise transfer between rails.</td></tr>
+</table>
 
 <h2><a name="rmessages"></a>Related message codes</h2>
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
@@ -122,6 +168,8 @@ measurements in other tools. Complex values allow you to recombine results (e.g.
 <tr><td><code>E_SWEEP_RANGE</code></td><td>f start below 1 kHz, f start ≥ f stop, f stop above 20 GHz, or points outside 10 … 5000.</td><td>Correct the Sweep tab.</td></tr>
 <tr><td><code>W_SWEEP_HIGH</code></td><td>f stop above 3 GHz.</td><td>Results above a few GHz are only indicative.</td></tr>
 <tr><td><code>W_MODES_CAPPED</code></td><td>The number of cavity modes hit the limit; spreading inductance may be slightly under-resolved.</td><td>Happens for very large planes with very small drills; results remain usable.</td></tr>
+<tr><td><code>I_EXPORT</code></td><td>An export finished; the message lists the written file(s).</td><td>–</td></tr>
+<tr><td><code>E_EXPORT</code></td><td>An export failed (folder not writable, file in use, PWRs with different frequency grids for a one-file export …).</td><td>Read the message, choose another folder or close the file in the other program, and export again.</td></tr>
 <tr><td><code>E_SINGULAR</code></td><td>The port reduction could not be solved at some frequency.</td><td>Look for <code>W_PORT_OVERLAP</code> or zero-length vias with ideal shorts in models.</td></tr>
 </table>
 

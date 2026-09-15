@@ -13,7 +13,9 @@ from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, 
     QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QFileDialog,
+    QMenu,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -24,6 +26,8 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,7 +55,18 @@ from simple_pi_calculator.gui.persistence import (
     ensure_dir,
     qbytearray_from_b64,
 )
-from simple_pi_calculator.gui.plot_widget import ImpedancePlot, series_color
+from simple_pi_calculator.gui.export_dialogs import (
+    CsvExportDialog,
+    ExportPlotsDialog,
+    PlotImagesOptions,
+    TouchstoneExportDialog,
+)
+from simple_pi_calculator.gui.plot_widget import (
+    RESET_VIEW_SHORTCUT,
+    ImpedancePlot,
+    series_color,
+)
+from simple_pi_calculator.io.export import TouchstoneOptions, safe_file_name
 from simple_pi_calculator.gui.worker import ComputeWorker
 from simple_pi_calculator.io.project_io import (
     AutosaveStore,
@@ -161,6 +176,10 @@ class MainWindow(QMainWindow):
         self._thread: QThread | None = None
         self._worker: ComputeWorker | None = None
         self._pending_views: dict[str, PlotView] = {}
+        self._csv_per_pwr = False
+        self._touchstone_combined = False
+        self._touchstone_options = TouchstoneOptions()
+        self._plot_images_options = PlotImagesOptions()
         self._pending_result_tab: str | None = None
         self._had_results_restored = False
         self._use_settings = use_settings
@@ -246,6 +265,11 @@ class MainWindow(QMainWindow):
         right = QWidget(self.splitter)
         rbox = QVBoxLayout(right)
         rbox.setContentsMargins(0, 0, 0, 0)
+        self.results_toolbar = QToolBar("Results", right)
+        self.results_toolbar.setObjectName("ResultsToolbar")
+        self.results_toolbar.setMovable(False)
+        self.results_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        rbox.addWidget(self.results_toolbar)
         result_splitter = QSplitter(Qt.Orientation.Vertical, right)
         self.result_tabs = QTabWidget(result_splitter)
         self.overview_plot = ImpedancePlot(title="All PWRs", unit=self.project.display.z_unit,
@@ -305,6 +329,11 @@ class MainWindow(QMainWindow):
         self.act_export_csv = A("Results &CSV…", self, triggered=lambda: self.export_csv())
         self.act_export_xlsx = A("Results &XLSX…", self, triggered=lambda: self.export_xlsx())
         self.act_export_png = A("Plot &PNG…", self, triggered=lambda: self.export_png())
+        self.act_export_touchstone = A("&Touchstone…", self,
+                                       triggered=lambda: self.export_touchstone())
+        self.act_export_all_plots = A("&All Plots…", self,
+                                      triggered=lambda: self.export_all_plots())
+        self.act_export_all_plots.setToolTip("Export all plots…")
         self.act_autosave_folder = A("Show Auto-save &Folder", self,
                                      triggered=self.show_autosave_folder)
         self.act_exit = A("E&xit", self, shortcut=QKeySequence.StandardKey.Quit,
@@ -313,7 +342,7 @@ class MainWindow(QMainWindow):
 
         self.act_add_row = A("&Add Row", self, shortcut=QKeySequence("Ctrl+Shift+N"),
                              triggered=self.add_row)
-        self.act_duplicate_row = A("&Duplicate Row", self, shortcut=QKeySequence("Ctrl+D"),
+        self.act_duplicate_row = A("&Duplicate Row", self, shortcut=QKeySequence("Ctrl+Shift+D"),
                                    triggered=self.duplicate_row)
         self.act_remove_rows = A("&Remove Selected Rows", self,
                                  shortcut=QKeySequence("Ctrl+Del"),
@@ -339,8 +368,14 @@ class MainWindow(QMainWindow):
         self.act_plane_only.toggled.connect(self._on_plane_only_action)
         self.act_markers = A("Show &Markers", self, checkable=True, checked=True)
         self.act_markers.toggled.connect(self.set_markers_visible)
-        self.act_reset_zoom = A("&Reset Zoom", self, shortcut=QKeySequence("Ctrl+0"),
-                                triggered=self.reset_zoom)
+        self.act_reset_view = A("&Reset View", self, triggered=lambda: self.reset_view())
+        self.act_reset_view.setShortcuts([QKeySequence(RESET_VIEW_SHORTCUT),
+                                          QKeySequence("Ctrl+0")])
+        self.act_reset_view.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.act_reset_view.setToolTip("Reset view: fit all visible curves, log–log axes "
+                                       f"({RESET_VIEW_SHORTCUT})")
+        self.act_reset_zoom = self.act_reset_view  # backwards-compatible name
+        self.addAction(self.act_reset_view)
         self.act_messages = self.message_dock.toggleViewAction()
         self.act_messages.setText("Show &Messages Dock")
 
@@ -365,8 +400,9 @@ class MainWindow(QMainWindow):
         for act in (self.act_import_stackup, self.act_import_pwr, self.act_import_decap):
             imp.addAction(act)
         exp = file_menu.addMenu("&Export")
-        for act in (self.act_export_csv, self.act_export_xlsx, self.act_export_png):
+        for act in self._export_actions():
             exp.addAction(act)
+        self._build_results_toolbar()
         file_menu.addSeparator()
         file_menu.addAction(self.act_autosave_folder)
         file_menu.addSeparator()
@@ -388,7 +424,7 @@ class MainWindow(QMainWindow):
             unit_menu.addAction(act)
         view.addAction(self.act_plane_only)
         view.addAction(self.act_markers)
-        view.addAction(self.act_reset_zoom)
+        view.addAction(self.act_reset_view)
         view.addSeparator()
         view.addAction(self.act_messages)
 
@@ -406,6 +442,28 @@ class MainWindow(QMainWindow):
         help_menu.addAction(self.act_about)
         help_menu.addAction(self.act_license)
         self._rebuild_recent_menu()
+
+    def _export_actions(self) -> list[QAction]:
+        return [self.act_export_csv, self.act_export_xlsx, self.act_export_touchstone,
+                self.act_export_png, self.act_export_all_plots]
+
+    def _build_results_toolbar(self) -> None:
+        bar = self.results_toolbar
+        self.reset_view_button = QToolButton(bar)
+        self.reset_view_button.setText("\u27f2 Reset view")
+        self.reset_view_button.setToolTip(self.act_reset_view.toolTip())
+        self.reset_view_button.clicked.connect(lambda _checked=False: self.reset_view())
+        bar.addWidget(self.reset_view_button)
+        bar.addSeparator()
+        self.export_button = QToolButton(bar)
+        self.export_button.setText("\u21a7 Export")
+        self.export_button.setToolTip("Export results or plot images")
+        self.export_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self.export_button)
+        for act in self._export_actions():
+            menu.addAction(act)
+        self.export_button.setMenu(menu)
+        bar.addWidget(self.export_button)
 
     def _connect_change_signals(self) -> None:
         for model in (self.stackup_model, self.pwr_model, self.decap_model):
@@ -556,6 +614,10 @@ class MainWindow(QMainWindow):
         self.act_export_csv.setEnabled(has)
         self.act_export_xlsx.setEnabled(has)
         self.act_export_png.setEnabled(has)
+        self.act_export_touchstone.setEnabled(has)
+        self.act_export_all_plots.setEnabled(has)
+        if hasattr(self, "export_button"):
+            self.export_button.setEnabled(has)
 
     # =========================================================================================
     # session (auto-save)
@@ -944,25 +1006,63 @@ class MainWindow(QMainWindow):
     def _export_stem(self) -> str:
         return project_stem(self.project_path) if self.project_path else "results"
 
-    def export_csv(self, folder: str | None = None) -> list[str]:
-        if not self.results:
+    def _export_done(self, title: str, paths: Sequence[str]) -> None:
+        """Info line per export in the Messages dock (category ``export``)."""
+        if not paths:
+            return
+        text = paths[0] if len(paths) == 1 else f"{len(paths)} files: " + "; ".join(paths)
+        self.message_dock.add_issues("export", [Issue("I_EXPORT", Severity.INFO,
+                                                      f"{title}: exported {text}", "Export")])
+        self.statusBar().showMessage(f"{title}: exported {len(paths)} file(s)", 8000)
+
+    def _export_failed(self, title: str, exc: BaseException) -> None:
+        log.error("%s failed", title, exc_info=exc)
+        self.message_dock.add_issues("export", [Issue("E_EXPORT", Severity.ERROR,
+                                                      f"{title} failed: {exc}", "Export")])
+        self.message_dock.show()
+        self.statusBar().showMessage(f"{title} failed: {exc}", 10000)
+
+    def export_csv(self, target: str | None = None,
+                   one_file_per_pwr: bool | None = None) -> list[str]:
+        """CSV export. ``target`` is a folder (one file per PWR) or a file path (one file).
+        Without ``target`` the options and file dialogs are shown. A ``target`` without
+        ``one_file_per_pwr`` keeps the historic one-file-per-PWR behaviour."""
+        if not self._exportable_results():
             return []
-        if folder is None:
-            folder = QFileDialog.getExistingDirectory(self, "Export Results CSV",
-                                                      self._start_dir())
-            if not folder:
+        if target is None:
+            dialog = CsvExportDialog(self, self._csv_per_pwr)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
                 return []
-        from simple_pi_calculator.io.export import export_csv
+            one_file_per_pwr = dialog.one_file_per_pwr()
+            self._csv_per_pwr = one_file_per_pwr
+            if one_file_per_pwr:
+                target = QFileDialog.getExistingDirectory(self, "Export Results CSV (folder)",
+                                                          self._start_dir())
+            else:
+                start = os.path.join(self._start_dir(), f"{self._export_stem()}.csv")
+                target, _ = QFileDialog.getSaveFileName(self, "Export Results CSV", start,
+                                                        "CSV files (*.csv)")
+            if not target:
+                return []
+        elif one_file_per_pwr is None:
+            one_file_per_pwr = True
+        from simple_pi_calculator.io.export import export_csv, export_csv_combined
         try:
-            written = export_csv(self._exportable_results(), folder, self._export_stem())
-        except OSError as exc:
-            self._error_box("Export CSV", str(exc))
+            if one_file_per_pwr:
+                written = export_csv(self._exportable_results(), target, self._export_stem())
+            else:
+                if not target.lower().endswith(".csv"):
+                    target += ".csv"
+                written = [export_csv_combined(self._exportable_results(), target,
+                                               self._export_stem())]
+        except Exception as exc:  # noqa: BLE001 - reported, never raised
+            self._export_failed("Export CSV", exc)
             return []
-        self.statusBar().showMessage(f"Exported {len(written)} CSV file(s) to {folder}", 8000)
+        self._export_done("Export CSV", written)
         return written
 
     def export_xlsx(self, path: str | None = None) -> str | None:
-        if not self.results:
+        if not self._exportable_results():
             return None
         if path is None:
             start = os.path.join(self._start_dir(), f"{self._export_stem()}.xlsx")
@@ -975,15 +1075,61 @@ class MainWindow(QMainWindow):
         from simple_pi_calculator.io.export import export_xlsx
         try:
             export_xlsx(self._exportable_results(), path, self.project)
-        except OSError as exc:
-            self._error_box("Export XLSX", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            self._export_failed("Export XLSX", exc)
             return None
-        self.statusBar().showMessage(f"Exported {path}", 8000)
+        self._export_done("Export XLSX", [path])
         return path
+
+    def export_touchstone(self, target: str | None = None, combined: bool | None = None,
+                          options: TouchstoneOptions | None = None) -> list[str]:
+        """Touchstone v1 export (§4.8): per-PWR ``.s1p`` into folder ``target``, or one
+        uncoupled N-port ``.sNp`` at file path ``target`` (extension set automatically)."""
+        results = self._exportable_results()
+        if not results:
+            return []
+        if target is None:
+            dialog = TouchstoneExportDialog(self, len(results), self._touchstone_options,
+                                            self._touchstone_combined)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return []
+            combined = dialog.is_combined()
+            options = dialog.options()
+            self._touchstone_combined = combined
+            self._touchstone_options = options
+            if combined:
+                ext = f".s{len(results)}p"
+                start = os.path.join(self._start_dir(), f"{self._export_stem()}{ext}")
+                target, _ = QFileDialog.getSaveFileName(self, "Export Touchstone", start,
+                                                        f"Touchstone {len(results)}-port "
+                                                        f"(*{ext});;All files (*)")
+            else:
+                target = QFileDialog.getExistingDirectory(self, "Export Touchstone (folder)",
+                                                          self._start_dir())
+            if not target:
+                return []
+        combined = bool(combined)
+        options = options or self._touchstone_options
+        from simple_pi_calculator.io.export import (
+            export_touchstone_combined,
+            export_touchstone_per_pwr,
+        )
+        try:
+            if combined:
+                written = [export_touchstone_combined(results, target, self._export_stem(),
+                                                      options, self.project)]
+            else:
+                written = export_touchstone_per_pwr(results, target, self._export_stem(),
+                                                    options, self.project)
+        except Exception as exc:  # noqa: BLE001
+            self._export_failed("Export Touchstone", exc)
+            return []
+        self._export_done("Export Touchstone", written)
+        return written
 
     def export_png(self, path: str | None = None) -> str | None:
         plot = self.current_plot()
-        if plot is None:
+        if plot is None or not self._exportable_results():
             return None
         if path is None:
             name = self.current_result_name() or "all"
@@ -997,10 +1143,53 @@ class MainWindow(QMainWindow):
         try:
             plot.export_png(path)
         except Exception as exc:  # noqa: BLE001
-            self._error_box("Export PNG", str(exc))
+            self._export_failed("Export PNG", exc)
             return None
-        self.statusBar().showMessage(f"Exported {path}", 8000)
+        self._export_done("Export PNG", [path])
         return path
+
+    def export_all_plots(self, folder: str | None = None, fmt: str | None = None,
+                         width: int | None = None, height: int | None = None,
+                         keep_zoom: bool | None = None) -> list[str]:
+        """Save ``All_PWRs.<ext>`` plus one image per PWR tab (sanitised names) into ``folder``
+        at ``width`` × ``height`` px (PNG or SVG). Without ``folder`` the options dialog is
+        shown."""
+        if not self._exportable_results():
+            return []
+        opts = self._plot_images_options
+        if folder is None:
+            if not opts.folder:
+                opts.folder = self._start_dir()
+            dialog = ExportPlotsDialog(self, opts)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return []
+            opts = dialog.options()
+            if not opts.folder:
+                return []
+            self._plot_images_options = opts
+        else:
+            opts = PlotImagesOptions(folder=folder, fmt=fmt or opts.fmt,
+                                     width=int(width or opts.width),
+                                     height=int(height or opts.height),
+                                     keep_zoom=opts.keep_zoom if keep_zoom is None
+                                     else bool(keep_zoom))
+        ext = opts.fmt.lower().lstrip(".")
+        written: list[str] = []
+        used: set[str] = set()
+        jobs = [(safe_file_name("All_PWRs", used), self.overview_plot)]
+        for name, plot in self.plots.items():
+            jobs.append((safe_file_name(name, used), plot))
+        try:
+            for stem, plot in jobs:
+                path = os.path.join(opts.folder, f"{stem}.{ext}")
+                written.append(plot.export_image(path, opts.width, opts.height, opts.keep_zoom))
+        except Exception as exc:  # noqa: BLE001
+            if written:
+                self._export_done("Export all plots", written)
+            self._export_failed("Export all plots", exc)
+            return written
+        self._export_done("Export all plots", written)
+        return written
 
     def _exportable_results(self) -> list[Any]:
         return [r for r in self.results if getattr(r, "z_pad", None) is not None]
@@ -1076,10 +1265,15 @@ class MainWindow(QMainWindow):
         for plot in self._all_plots():
             plot.set_markers_visible(visible)
 
-    def reset_zoom(self) -> None:
+    def reset_view(self) -> None:
+        """Default view of the visible plot (toolbar button, View ▸ Reset View, Ctrl+D)."""
         plot = self.current_plot()
         if plot is not None:
-            plot.reset_zoom()
+            plot.reset_view()
+
+    def reset_zoom(self) -> None:
+        """Backwards-compatible alias of :meth:`reset_view`."""
+        self.reset_view()
 
     # =========================================================================================
     # Help menu

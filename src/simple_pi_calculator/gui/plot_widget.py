@@ -7,13 +7,19 @@ and ranges therefore use log10 values (§5.6 pitfall).
 
 from __future__ import annotations
 
+import contextlib
 import math
-from typing import Any, Sequence
+import os
+import re
+import sys
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.exporters  # noqa: F401 - explicit import so PyInstaller collects it (§5.6)
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtWidgets import QApplication
 
 from simple_pi_calculator.constants import MARKER_FREQUENCIES_HZ, Z_PLOT_FLOOR_OHM
 from simple_pi_calculator.core.units import format_frequency, format_sig, z_label, z_scale
@@ -24,6 +30,9 @@ pg.setConfigOptions(antialias=True, background="w", foreground="k")
 PALETTE = ("#1f77b4", "#ff7f0e", "#2ca02c", "#9467bd", "#8c564b", "#e377c2", "#17becf",
            "#bcbd22", "#7f7f7f", "#d62728")
 MARKER_COLOR = "#d62728"
+RESET_VIEW_TEXT = "Reset view"
+RESET_VIEW_SHORTCUT = "Ctrl+D"
+IMAGE_FORMATS = ("png", "svg")
 
 
 def series_color(index: int) -> str:
@@ -112,6 +121,8 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         self._show_plane_only = False
         self._show_markers = True
         self._series: dict[str, _Series] = {}
+        self._results: list[Any] = []
+        self._colors: list[str] = []
         self._programmatic = 0
 
         self.readout = pg.LabelItem(justify="left")
@@ -152,6 +163,7 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                                            slot=self._on_move)
         self._last_auto = tuple(self.vb.autoRangeEnabled())
         self.vb.setRange(xRange=(5, 9), yRange=(-1, 3), padding=0)
+        self._install_reset_view_menu()
 
     # -- data -------------------------------------------------------------------------------------
     @property
@@ -181,6 +193,8 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
             for t in s.marker_texts:
                 self.plot.removeItem(t)
         self._series.clear()
+        self._results = []
+        self._colors = []
         self.legend.clear()
         self.readout.setText(" ")
 
@@ -228,9 +242,11 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                 for line in self.marker_lines:
                     f = line.marker_frequency_hz
                     line.setVisible(bool(self._show_markers and f_min <= f <= f_max))
+            self._results = list(results)
+            self._colors = [colors[i] if colors is not None and i < len(colors)
+                            else series_color(i) for i in range(len(results))]
             self._update_markers()
-            self.vb.enableAutoRange()
-            self.vb.autoRange()
+            self._apply_default_view()
         finally:
             self._programmatic -= 1
 
@@ -351,10 +367,67 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         self.plot.getAxis("left").setLabel(self.axis_label_text())
 
     # -- view state -------------------------------------------------------------------------------
-    def reset_zoom(self) -> None:
-        self.plot.enableAutoRange()
-        self.plot.autoRange()
+    def _install_reset_view_menu(self) -> None:
+        """"Reset view (Ctrl+D)" at the top of the ViewBox context menu; pyqtgraph's own
+        "View All" entry is re-routed to the same default view (§5.6)."""
+        menu = getattr(self.vb, "menu", None)
+        if menu is None:
+            return
+        self.reset_view_action = QAction(RESET_VIEW_TEXT, menu)
+        self.reset_view_action.setShortcut(QKeySequence(RESET_VIEW_SHORTCUT))
+        # the application-wide shortcut lives in the main window; here it is only a hint
+        self.reset_view_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        self.reset_view_action.triggered.connect(lambda _checked=False: self.reset_view())
+        actions = menu.actions()
+        if actions:
+            menu.insertAction(actions[0], self.reset_view_action)
+        else:
+            menu.addAction(self.reset_view_action)
+        view_all = getattr(menu, "viewAll", None)
+        if view_all is not None:
+            with contextlib.suppress(RuntimeError, TypeError):
+                view_all.triggered.disconnect()
+            view_all.triggered.connect(lambda _checked=False: self.reset_view())
+
+    def _apply_default_view(self) -> None:
+        """The default view of a fresh compute: log–log axes, range fitted to the data of the
+        visible curves with pyqtgraph's standard (size-dependent) padding, auto-range left enabled
+        so later visibility / unit changes re-fit."""
+        self.plot.setLogMode(x=True, y=True)
+        self.vb.autoRange()
+        self.vb.enableAutoRange(x=True, y=True)
+
+    def reset_view(self) -> None:
+        """Restore the default view (toolbar "Reset view", Ctrl+D, context menu, "View All")."""
+        self._programmatic += 1
+        try:
+            self._apply_default_view()
+            self.set_markers_visible(self._show_markers)
+        finally:
+            self._programmatic -= 1
         self.viewChanged.emit()
+
+    def reset_zoom(self) -> None:
+        """Backwards-compatible alias of :meth:`reset_view`."""
+        self.reset_view()
+
+    def is_default_view(self, tol: float = 1e-9) -> bool:
+        """``True`` when auto-range is on for both axes and the range equals the fitted range."""
+        if not all(self.vb.autoRangeEnabled()):
+            return False
+        if getattr(self.vb, "_autoRangeNeedsUpdate", False):
+            self.vb.updateAutoRange()
+        bounds = self.vb.childrenBoundingRect()
+        if bounds is None:
+            return True
+        (x0, x1), (y0, y1) = self.vb.viewRange()
+        px, py = self.vb.suggestPadding(0), self.vb.suggestPadding(1)
+        wx, wy = bounds.width(), bounds.height()
+        exp_x = (bounds.left() - wx * px, bounds.right() + wx * px)
+        exp_y = (bounds.top() - wy * py, bounds.bottom() + wy * py)
+        tx, ty = tol + 1e-6 * abs(wx), tol + 1e-6 * abs(wy)
+        return (abs(x0 - exp_x[0]) <= tx and abs(x1 - exp_x[1]) <= tx
+                and abs(y0 - exp_y[0]) <= ty and abs(y1 - exp_y[1]) <= ty)
 
     def view_state(self) -> PlotView:
         auto = self.vb.autoRangeEnabled()
@@ -367,8 +440,7 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         self._programmatic += 1
         try:
             if view.auto_range or view.x_range_log10 is None or view.y_range_log10 is None:
-                self.vb.enableAutoRange()
-                self.vb.autoRange()
+                self._apply_default_view()
             else:
                 self.vb.disableAutoRange()
                 self.vb.setRange(xRange=view.x_range_log10, yRange=view.y_range_log10,
@@ -421,5 +493,117 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         exporter.parameters()["width"] = width
         exporter.export(path)
 
+    def results(self) -> list[Any]:
+        return list(self._results)
 
-__all__ = ["ImpedancePlot", "LogFreqAxis", "engineering_frequency", "series_color", "PALETTE"]
+    def make_export_copy(self, width: int, height: int, keep_zoom: bool = False
+                         ) -> "ImpedancePlot":
+        """An off-screen twin of this plot at ``width`` × ``height`` px with the same data, unit,
+        marker / plane-only / curve-visibility settings and title; default view unless
+        ``keep_zoom`` (then the current log10 ranges). The hover readout row is removed.
+
+        The twin is shown with ``WA_DontShowOnScreen`` and rendered once so that the axis text
+        widths and the legend are laid out before the real export (a widget that was never shown,
+        e.g. a background tab, otherwise exports with collapsed axes).
+        """
+        twin = ImpedancePlot(title=self._title, unit=self._unit,
+                             marker_frequencies=self._marker_freqs,
+                             marker_texts=self._marker_texts_enabled)
+        twin._show_markers = self._show_markers
+        twin._show_plane_only = self._show_plane_only
+        twin._stale = self._stale
+        twin._update_title()
+        twin.ci.removeItem(twin.readout)
+        twin.set_results(self._results, self._colors)
+        twin.set_plane_only_visible(self._show_plane_only)
+        twin.set_markers_visible(self._show_markers)
+        for name, s in self._series.items():
+            twin.set_curve_visible(name, s.visible)
+        twin.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+        twin.resize(int(width), int(height))
+        twin.show()
+        app = QApplication.instance()
+        for _ in range(2):
+            if app is not None:
+                app.processEvents()
+            twin.grab()  # forces a paint: axes compute their text size and relayout
+        if keep_zoom:
+            (x0, x1), (y0, y1) = self.vb.viewRange()
+            twin.vb.disableAutoRange()
+            twin.vb.setRange(xRange=(x0, x1), yRange=(y0, y1), padding=0)
+        else:
+            twin._apply_default_view()
+        if app is not None:
+            app.processEvents()
+        twin.grab()
+        return twin
+
+    def export_image(self, path: str, width: int = 1600, height: int = 1000,
+                     keep_zoom: bool = False) -> str:
+        """Save the plot as PNG (``ImageExporter``) or SVG (``SVGExporter``) — chosen by the
+        extension of ``path`` — at exactly ``width`` × ``height`` px, rendered from an off-screen
+        twin (:meth:`make_export_copy`) so the on-screen view is not touched."""
+        width, height = int(width), int(height)
+        if width < 50 or height < 50:
+            raise ValueError(f"image size must be at least 50 x 50 px, got {width} x {height}")
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        if ext not in IMAGE_FORMATS:
+            raise ValueError(f"unsupported image format {ext!r} (use PNG or SVG)")
+        folder = os.path.dirname(os.path.abspath(path))
+        os.makedirs(folder, exist_ok=True)
+        twin = self.make_export_copy(width, height, keep_zoom)
+        try:
+            scene = twin.scene()
+            if ext == "png":
+                exporter = pg.exporters.ImageExporter(scene)
+                params = exporter.parameters()
+                params.param("width").setValue(width, blockSignal=exporter.widthChanged)
+                params.param("height").setValue(height, blockSignal=exporter.heightChanged)
+                exporter.export(path)
+            else:
+                exporter = pg.exporters.SVGExporter(scene)
+                with _svg_close_path_workaround():
+                    exporter.export(path)
+        finally:
+            twin.hide()
+            twin.deleteLater()
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise OSError(f"the image exporter did not write {path}")
+        return path
+
+
+@contextlib.contextmanager
+def _svg_close_path_workaround() -> Iterator[None]:
+    """pyqtgraph ≤ 0.14 ``SVGExporter.correctCoordinates`` fails on the ``Z`` (close-path) token
+    that Qt 6 writes for the ViewBox background rectangle (``ValueError: not enough values to
+    unpack``). Temporarily strip standalone ``Z`` tokens before the coordinate correction and put
+    them back afterwards."""
+    module = sys.modules.get("pyqtgraph.exporters.SVGExporter")
+    original = getattr(module, "correctCoordinates", None)
+    if module is None or original is None:
+        yield
+        return
+
+    def patched(node, defs, item, options):
+        closed = []
+        for element in node.getElementsByTagName("path"):
+            d = element.getAttribute("d")
+            if re.search(r"(^|\s)[Zz](\s|$)", d):
+                element.setAttribute("d", re.sub(r"(^|\s)[Zz](?=\s|$)", " ", d).strip())
+                closed.append(element)
+        result = original(node, defs, item, options)
+        for element in closed:
+            d = element.getAttribute("d").strip()
+            if d:
+                element.setAttribute("d", d + " Z")
+        return result
+
+    module.correctCoordinates = patched
+    try:
+        yield
+    finally:
+        module.correctCoordinates = original
+
+
+__all__ = ["ImpedancePlot", "LogFreqAxis", "engineering_frequency", "series_color", "PALETTE",
+           "RESET_VIEW_TEXT", "RESET_VIEW_SHORTCUT", "IMAGE_FORMATS"]

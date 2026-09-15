@@ -95,9 +95,10 @@ def test_reduce_parallel_identical_to_serial():
     z = rng.normal(size=(F, P, P)) + 1j * rng.normal(size=(F, P, P))
     z = z + np.swapaxes(z, 1, 2)
     zl = rng.normal(size=(F, P - 1)) + 5.0
-    z1, r1 = _reduce(z, zl, workers=1)
-    z4, r4 = _reduce(z, zl, workers=4)
+    z1, r1, e1 = _reduce(z, zl, workers=1)
+    z4, r4, e4 = _reduce(z, zl, workers=4)
     assert np.array_equal(z1, z4)
+    assert np.array_equal(e1, e4)
     assert np.allclose(r1, r4, rtol=1e-12, atol=0)
 
 
@@ -272,3 +273,69 @@ def test_decap_impedance_memo_replays_warnings(tmp_path):
     assert z1 is z2
     assert [i.code for i in i1.issues] == [i.code for i in i2.issues]
     assert any(i.code.startswith("W_S2P_EXTRAP") for i in i2.issues)
+
+
+# (e) rcond screening (§3.6): exact decisions at the same frequency as the full SVD ------------
+def _system_with_conditions(conds, K=10, seed=11):
+    """z_cav (F, K+1, K+1) whose decap block has the given 2-norm condition numbers."""
+    rng = np.random.default_rng(seed)
+    F = len(conds)
+    z = rng.normal(size=(F, K + 1, K + 1)) + 1j * rng.normal(size=(F, K + 1, K + 1))
+    for i, c in enumerate(conds):
+        q1, _ = np.linalg.qr(rng.normal(size=(K, K)) + 1j * rng.normal(size=(K, K)))
+        q2, _ = np.linalg.qr(rng.normal(size=(K, K)) + 1j * rng.normal(size=(K, K)))
+        sv = np.geomspace(1.0, 1.0 / c, K) * 1e-3
+        z[i, 1:, 1:] = (q1 * sv) @ q2.conj().T
+    return z, np.zeros((F, K), dtype=complex)
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_near_singular_flagged_at_same_frequency(workers):
+    from simple_pi_calculator.core.pdn import SingularReductionError
+    conds = [1e3] * 40
+    conds[23] = 1e17  # rcond ≈ 1e-17: no LAPACK pivot failure, only the F12 rcond check
+    conds[31] = 1e18
+    conds[9] = 1e13   # ill-conditioned but legitimate (rcond 1e-13 ≥ 1e-14)
+    z, zl = _system_with_conditions(conds)
+    with pytest.raises(SingularReductionError) as ref:
+        _reduce(z, zl, exact_rcond=True, workers=workers)
+    with pytest.raises(SingularReductionError) as new:
+        _reduce(z, zl, workers=workers)
+    assert new.value.index == ref.value.index == 23
+    assert new.value.rcond == ref.value.rcond < 1e-14
+    assert "ill-conditioned" in str(new.value)
+
+    conds[23] = conds[31] = 1e3
+    z, zl = _system_with_conditions(conds)
+    zr_ref, rc_ref, _ = _reduce(z, zl, exact_rcond=True, workers=workers)
+    zr, rc, exact = _reduce(z, zl, workers=workers)
+    assert np.array_equal(zr, zr_ref)
+    assert exact[9] and rc[9] == rc_ref[9]  # screened in and evaluated exactly
+    assert exact.sum() < len(conds)
+    assert np.min(rc[exact]) == np.min(rc_ref)
+
+
+def test_rcond_estimate_brackets_and_min_is_exact(example_inputs):
+    """On the example project the estimate stays within [1/√K, K]·rcond and min_rcond is exact."""
+    from simple_pi_calculator.core import pdn
+    captured = {}
+    original = pdn._reduce
+
+    def spy(z_cav, z_load, **kw):
+        captured["args"] = (z_cav, z_load)
+        return original(z_cav, z_load, **kw)
+
+    pdn._reduce = spy
+    try:
+        results, _ = compute_project(dataclasses.replace(example_inputs,
+                                                         pwrs=example_inputs.pwrs[:1]),
+                                     cavity_cache=None, workers=1)
+    finally:
+        pdn._reduce = original
+    z_cav, z_load = captured["args"]
+    K = z_cav.shape[1] - 1
+    est = pdn._reduce_chunk(z_cav, z_load, 0, z_cav.shape[0], True)[1]
+    _, rc_exact, _ = original(z_cav, z_load, exact_rcond=True)
+    ratio = est / rc_exact
+    assert np.all(ratio >= 1 / np.sqrt(K) - 1e-12) and np.all(ratio <= K)
+    assert results[0].info["min_rcond"] == np.min(rc_exact)

@@ -228,7 +228,8 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
 
 The engine evaluates the cavity model with grouped BLAS products (ports on a decap row share their
 modal factors), computes frequency blocks and PWR nets on worker threads (numpy releases the GIL),
-pins BLAS to one thread to avoid oversubscription, and caches the plane impedance matrix between
+pins BLAS to one thread to avoid oversubscription, computes the exact condition-number SVD only
+where a cheap estimate cannot rule out an ill-conditioned reduction, and caches the plane impedance matrix between
 runs, so changing only decap models, the via model or the mounting inductance is fast. The thread
 count is set in **Vias → Advanced → Worker threads** (Auto = all logical CPUs); it never changes the
 results. Details: `docs/DESIGN.md` §3.9.
@@ -237,9 +238,9 @@ Measured with `python tools/bench.py` (best of 3, cold caches, 2-core Xeon, nump
 
 | Scenario | v0.1.0 | now, 1 thread | now, Auto (2 threads) | re-run after a decap-only change |
 |---|---|---|---|---|
-| Bundled example (2 nets) | 0.05 s | 0.024 s | 0.03 s | 0.012 s |
-| Large MLO (80 mm plane, 150 caps / 121 ports, 400 points) | 2.9–3.6 s | 0.82 s | 0.45 s | 0.37 s |
-| Many nets (6 nets, 3 decap rows each) | 0.22–0.27 s | 0.14 s | 0.09 s | 0.04 s |
+| Bundled example (2 nets) | 0.05 s | 0.023 s | 0.025 s | 0.008 s |
+| Large MLO (80 mm plane, 150 caps / 121 ports, 400 points) | 2.9–3.6 s | 0.27 s | 0.19 s | 0.09 s |
+| Many nets (6 nets, 3 decap rows each) | 0.22–0.27 s | 0.08 s | 0.06 s | 0.02 s |
 
 Results are identical to v0.1.0 within 2e-10 relative (golden example: 7e-11).
 

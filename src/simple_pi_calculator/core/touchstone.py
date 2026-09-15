@@ -1,4 +1,5 @@
-"""Touchstone v1 ``.s2p`` reader, S→Z conversion and interpolation (DESIGN.md §2.7.2, §3.8, §4.6).
+"""Touchstone v1 ``.s2p`` reader, S→Z conversion and interpolation (DESIGN.md §2.7.2, §3.8, §4.6),
+plus a Touchstone v1 N-port writer used by the results export (§4.8).
 
 Errors are added to the ``IssueCollector`` and raised as :class:`InputError` carrying that issue;
 warnings are only added.
@@ -8,7 +9,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Sequence
 
 import numpy as np
 
@@ -22,6 +23,10 @@ __all__ = [
     "interpolate_impedance",
     "normalize_s2p_mode",
     "SINGULAR_EPS",
+    "touchstone_extension",
+    "format_touchstone_v1",
+    "write_touchstone_v1",
+    "z_to_s",
 ]
 
 SINGULAR_EPS = 1e-12
@@ -251,3 +256,118 @@ def interpolate_impedance(f_src: np.ndarray, z_src: np.ndarray, f_dst: np.ndarra
                        f"{int(high.sum())} frequency point(s) above the data range "
                        f"({fs[-1]:.6g} Hz) extrapolated", source)
     return out
+
+
+# ---------------------------------------------------------------------------------------------
+# writer (§4.8)
+# ---------------------------------------------------------------------------------------------
+_MAX_WRITE_PORTS = 99
+_PAIRS_PER_LINE = 4
+_WRITE_NUMBER = "{:.16e}"
+
+
+def touchstone_extension(n_ports: int) -> str:
+    """File extension ``.s<N>p`` of Touchstone v1 (``.s1p``, ``.s2p``, … ``.s99p``)."""
+    n = int(n_ports)
+    if not 1 <= n <= _MAX_WRITE_PORTS:
+        raise ValueError(f"Touchstone v1 export supports 1 … {_MAX_WRITE_PORTS} ports, got {n}")
+    return f".s{n}p"
+
+
+def z_to_s(z: np.ndarray, r_ref: float) -> np.ndarray:
+    """Reflection coefficient of a 1-port (or of each uncoupled port): S = (Z − R)/(Z + R)."""
+    z = np.asarray(z, dtype=complex)
+    return (z - r_ref) / (z + r_ref)
+
+
+def format_touchstone_v1(f_hz: np.ndarray, data: np.ndarray, *, parameter: str = "S",
+                         data_format: str = "RI", r_ref: float = 1.0,
+                         comments: Sequence[str] = ()) -> str:
+    """Touchstone v1 text of an N-port network (N = 1 … 99).
+
+    Follows the *Touchstone(R) File Format Specification, Version 1.1* (EIA/IBIS Open Forum,
+    2002; the v1.x rules are restated in "Touchstone File Format Specification Version 2.0",
+    IBIS Open Forum, 2009, section "Version 1.x files"):
+
+    * comment lines start with ``!``; one option line ``# <freq unit> <parameter> <format> R <n>``
+      precedes the data (here always ``Hz``);
+    * one data block per frequency, frequencies strictly increasing;
+    * **1-port**: ``f  N11`` on one line;
+    * **2-port**: ``f  N11 N21 N12 N22`` on one line — the only case whose order is not
+      row-major (21 before 12);
+    * **3-port and more**: the matrix is written row by row, each matrix row starts on a new line
+      (the first one after the frequency) and holds at most four parameter pairs per line, so for
+      N ≥ 5 a matrix row wraps onto continuation lines of four pairs (a 3-port has three lines
+      of three pairs, a 5-port rows of 4 + 1 pairs);
+    * each parameter is a pair: ``RI`` = real, imaginary; ``MA`` = magnitude, angle in degrees;
+    * in v1 files **Z and Y parameters are normalised** to the reference resistance ``R``, so a
+      Z value written here is ``Z / R`` (identical to Z for the PDN default R = 1 Ω).
+
+    ``data`` has shape ``(F, N, N)`` (a ``(F,)`` array is taken as a 1-port) and holds the
+    un-normalised parameter in Ω for ``Z``, or the dimensionless S-parameters for ``S``.
+    """
+    param = str(parameter).strip().upper()
+    fmt = str(data_format).strip().upper()
+    if param not in ("S", "Z"):
+        raise ValueError(f"parameter must be 'S' or 'Z', got {parameter!r}")
+    if fmt not in ("RI", "MA"):
+        raise ValueError(f"data format must be 'RI' or 'MA', got {data_format!r}")
+    r = float(r_ref)
+    if not (r > 0 and np.isfinite(r)):
+        raise ValueError(f"reference resistance must be > 0, got {r_ref!r}")
+    f = np.asarray(f_hz, dtype=float).ravel()
+    arr = np.asarray(data, dtype=complex)
+    if arr.ndim == 1:
+        arr = arr.reshape(-1, 1, 1)
+    if arr.ndim != 3 or arr.shape[1] != arr.shape[2] or arr.shape[0] != f.size:
+        raise ValueError(f"data must have shape (F, N, N) with F = {f.size}, got {arr.shape}")
+    n = arr.shape[1]
+    touchstone_extension(n)  # validates N
+    if f.size == 0:
+        raise ValueError("no frequency points")
+    if not (np.all(np.isfinite(f)) and np.all(f > 0) and np.all(np.diff(f) > 0)):
+        raise ValueError("frequencies must be finite, > 0 and strictly increasing")
+    if param == "Z":
+        arr = arr / r
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("non-finite parameter values")
+
+    def pair(v: complex) -> str:
+        if fmt == "RI":
+            a, b = v.real, v.imag
+        else:
+            a, b = abs(v), float(np.degrees(np.angle(v)))
+        return f"{_WRITE_NUMBER.format(a)} {_WRITE_NUMBER.format(b)}"
+
+    out: list[str] = []
+    for c in comments:
+        for line in str(c).splitlines() or [""]:
+            out.append(f"! {line}".rstrip())
+    out.append(f"# Hz {param} {fmt} R {r:.12g}")
+    for k in range(f.size):
+        freq = _WRITE_NUMBER.format(f[k])
+        m = arr[k]
+        if n == 1:
+            out.append(f"{freq} {pair(m[0, 0])}")
+        elif n == 2:
+            out.append(f"{freq} " + " ".join(pair(m[i, j]) for i, j in ((0, 0), (1, 0), (0, 1),
+                                                                        (1, 1))))
+        else:
+            for i in range(n):
+                for start in range(0, n, _PAIRS_PER_LINE):
+                    chunk = " ".join(pair(m[i, j]) for j in range(start,
+                                                                  min(n, start + _PAIRS_PER_LINE)))
+                    lead = freq if (i == 0 and start == 0) else " " * len(freq)
+                    out.append(f"{lead} {chunk}")
+    return "\n".join(out) + "\n"
+
+
+def write_touchstone_v1(path: str | os.PathLike, f_hz: np.ndarray, data: np.ndarray, **kwargs
+                        ) -> str:
+    """Write :func:`format_touchstone_v1` text to ``path`` (UTF-8, ``\\n`` line ends)."""
+    text = format_touchstone_v1(f_hz, data, **kwargs)
+    folder = os.path.dirname(os.path.abspath(os.fspath(path)))
+    os.makedirs(folder, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    return os.fspath(path)

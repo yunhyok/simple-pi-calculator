@@ -807,6 +807,35 @@ also check: if any Z_red (or Z_PAD) is non-finite, or the reciprocal condition n
 (message names the first offending frequency and suggests checking `W_PORT_OVERLAP` / zero-length
 vias with ideal-short models). Legitimate cases have rcond ≫ 1e-14 (bundled example over the default grid: min rcond 2.4e-6 for VDD_CORE, 2.5e-5 for VDD_IO).
 
+**rcond screening (post-v0.1.0, `pdn._reduce`).** The batched SVD is ≈ 5× the cost of the solve
+(K = 120: 0.59 s vs 0.10 s for 403 frequencies), so it is computed only where it can matter:
+
+1. *Probe estimate in the same factorisation.* k = min(8, K) fixed complex Gaussian unit vectors
+   v_j (seed depends only on K) are appended as extra right-hand-side columns of the one
+   `numpy.linalg.solve` call (one LU per frequency; the first column's solution is bit-identical to
+   solving the Schur RHS alone). L = max_j ‖A⁻¹v_j‖₂ ≤ ‖A⁻¹‖₂ and
+   rc_est = 1/(‖A‖_F·L). Deterministically rc_est ≥ rc/√K (since ‖A‖_F ≤ √K‖A‖₂ and L ≤ ‖A⁻¹‖₂);
+   rc_est over-estimates rc by more than γ only if |⟨u₁, v_j⟩| < 1/γ for **all** k probes (u₁ = the
+   right singular vector of σ_min), probability ≈ (K/γ²)^k for generic matrices — 1e-40 for K = 1000,
+   γ = 1e4, k = 8 (random-probe condition estimation, cf. Dixon 1983; the LAPACK `xGECON`/Hager–Higham
+   1-norm estimator is likewise an estimate).
+2. *Exact SVD where it can matter:* every frequency with rc_est < γ·1e-14 (γ = 1e4) and the 8
+   frequencies with the smallest rc_est. The `E_SINGULAR` decision uses exact SVD values only, so a
+   flagged frequency, its reported rcond and the first offending index are the same as with the full
+   SVD; `min_rcond` is the exact minimum over the refined set (bit-identical on the example and the
+   benchmark cases; the estimate is within [0.47, 3.8]× of rc there and the minimum lies among the 8
+   smallest estimates).
+3. Non-finite solutions or estimates give rc_est = 0 (→ exact check); non-finite Z_red is still
+   checked at every frequency. A non-finite matrix now reports its own frequency instead of the first
+   frequency of its chunk.
+
+Alternatives measured and rejected: an explicit batched inverse for an exact ‖A⁻¹‖ (0.79 s, slower than
+the SVD — numpy exposes no LU factors, so a factor-based `xGECON`-style estimator would need repeated
+factorisations, ≥ 4 solves ≈ 0.4 s, and scipy is excluded from the build); SVD on a frequency
+subsample with residual checks ‖Ax − b‖/‖b‖ — partial-pivoting LU is backward stable, so the residual
+stays ≈ ε even for rcond ≪ 1e-14 and cannot replace the rcond check at unsampled frequencies.
+`_reduce(..., exact_rcond=True)` keeps the full-SVD behaviour (tests).
+
 ### 3.7 Numerical pitfalls and rules
 
 1. **Low-frequency cancellation.** All entries of Z contain the same huge (0,0) term 1/(jωC_plane).
@@ -860,7 +889,7 @@ D = dyn + S0 + k²S1 and Z = pref·D are formed with the explicit real/imaginary
 multiplication, in place, per chunk (no F×P×P temporaries).
 
 **Frequency chunks and worker threads** (`core/parallel.py`). Z(ω) and the Schur reduction (§3.6:
-batched `solve` + batched `svd` for rcond) are split into contiguous frequency chunks of ≈ 8 MB
+batched `solve` with rcond probes, then the selective exact SVD) are split into contiguous frequency chunks of ≈ 8 MB
 working set (at least 2·workers chunks when the work exceeds 2 MB) and run on a private
 `ThreadPoolExecutor`; numpy releases the GIL inside LAPACK/BLAS and ufunc loops. Very small chunks
 are avoided (they lose the gain to GIL hand-offs between numpy calls). Each chunk performs exactly
@@ -907,11 +936,13 @@ computed once per net.
 
 | Scenario | before | after, workers = 1 | after, auto (2) | decap-only re-run (cache) |
 |---|---|---|---|---|
-| §8 example (2 nets, P = 15/4) | 0.049–0.054 s | 0.024 s | 0.025–0.035 s | 0.012 s |
-| large MLO (P = 121, M×N = 1073×845, 400 pts) | 2.87–3.60 s | 0.82 s | 0.45 s | 0.37 s |
-| many nets (6 nets, P = 13–23) | 0.22–0.27 s | 0.14 s | 0.08–0.10 s | 0.04 s |
+| §8 example (2 nets, P = 15/4) | 0.049–0.054 s | 0.023 s | 0.023–0.029 s | 0.006–0.009 s |
+| large MLO (P = 121, M×N = 1073×845, 400 pts) | 2.87–3.60 s | 0.26–0.29 s | 0.18–0.22 s | 0.09 s |
+| many nets (6 nets, P = 13–23) | 0.22–0.27 s | 0.08 s | 0.05–0.06 s | 0.02 s |
 
-After the restructuring the batched SVD for rcond (§3.6) dominates large nets (≈ 75 %).
+With the rcond screening of §3.6 (probe estimate + selective SVD) the large-MLO reduction dropped
+from 0.34 s to 0.08–0.10 s (full-SVD variant of this section: 0.45 s total with 2 workers, 0.82 s
+with 1); the remaining time is split evenly between static sums, Z(f) and the reduction.
 
 ---
 
@@ -1335,11 +1366,47 @@ rows as in §4.3/§4.4).
 
 ### 4.8 Results export
 
-CSV (one file per PWR, `<project>_<PWR>.csv`) or one XLSX with one sheet per PWR (sheet name =
-PWR name truncated to 31 chars, invalid chars `[]:*?/\` replaced by `_`). Columns:
-`Frequency (Hz)`, `Re Z (Ohm)`, `Im Z (Ohm)`, `|Z| (Ohm)`, and if plane-only enabled
-`|Z| plane only (Ohm)`. A header block (XLSX: sheet `Summary`) lists inputs digest and marker
-readouts. Numbers written with `repr`-precision (`%.9e`).
+Entry points: File ▸ Export ▸ (Results CSV…, Results XLSX…, Touchstone…, Plot PNG…, All Plots…)
+and the same menu on the "↧ Export" button of the results toolbar. Every export reports an
+`I_EXPORT` Info line with the written path(s) to the Messages dock (category `export`); any
+exception becomes an `E_EXPORT` Error line — exports never raise into the GUI.
+
+**CSV** (`io/export.py`), options dialog:
+
+* *One file* (default, `export_csv_combined`): `Frequency (Hz)`, then per PWR
+  `<PWR> |Z| (Ohm)`, `<PWR> Re Z (Ohm)`, `<PWR> Im Z (Ohm)` (+ `<PWR> |Z| plane only (Ohm)` if
+  present). All PWRs must share one frequency grid (`ValueError` otherwise).
+* *One file per PWR* (`export_csv`): `<project>_<PWR>.csv` with `Frequency (Hz)`, `Re Z (Ohm)`,
+  `Im Z (Ohm)`, `|Z| (Ohm)`, and if plane-only enabled `|Z| plane only (Ohm)`.
+
+A `#` header block lists version, project, UTC date and marker readouts. Numbers `%.9e`.
+
+**XLSX**: one workbook, sheet `Summary` (inputs digest, marker readouts, info) plus one sheet per
+PWR (sheet name = PWR name truncated to 31 chars, invalid chars `[]:*?/\` replaced by `_`), same
+columns as the per-PWR CSV.
+
+**Touchstone v1** (writer `core/touchstone.format_touchstone_v1` / `write_touchstone_v1`, spec:
+Touchstone 1.1, EIA/IBIS 2002):
+
+* Layout: per-PWR 1-port `<project>_<PWR>.s1p` (`export_touchstone_per_pwr`), or one file with
+  N = number of PWRs as **uncoupled** ports (`export_touchstone_combined`; off-diagonal = 0,
+  extension `.sNp`, N ≤ 99; an existing `.sKp` extension is replaced, others get `.sNp` appended).
+* Options (`TouchstoneOptions`): parameter `S` (default) or `Z`; format `RI` (default) or `MA`
+  (angle in degrees); frequency unit always `Hz`; reference `R = 1 Ω` default (PDN convention),
+  editable. `S11 = (Z − R)/(Z + R)`; `Z` data are normalised to R (v1 rule for Z/Y).
+* Option line `# Hz S RI R 1`; `!` comments: tool name/version, project, UTC date, quantity and
+  conversion, uncoupled-ports caveat (combined), per port: PWR name, geometry summary
+  (PWR/GND layers, width, decaps, vias) and `info`.
+* Data lines: `%.16e`; 1-port `f N11`; 2-port `f N11 N21 N12 N22`; N ≥ 3 row-major, every matrix
+  row starts a new line (frequency only on the first), at most 4 pairs per line (rows wrap for
+  N ≥ 5).
+
+**Plot images**: *Plot PNG…* = `ImageExporter` of the visible plot, 1600 px wide, current view.
+*All Plots…* (folder, PNG/SVG, width × height px, "keep current zoom") writes `All_PWRs.<ext>` and
+one `<PWR>.<ext>` per PWR tab (`safe_file_name`: `<>:"/\|?*` and control chars → `_`, reserved
+Windows names prefixed with `_`, case-insensitive duplicates get `_2`, `_3`, …), with the current
+unit / marker / plane-only / curve-visibility settings, in the default view (§5.6) unless "keep
+current zoom". Rendering details: §5.6.
 
 ---
 
@@ -1913,9 +1980,20 @@ on restore, §5.8.3).
   label and marker texts; preserve the current X range and transform the Y range by
   `+log10(s_new/s_old)`.
 * Zoom/pan: default ViewBox mouse interaction (left-drag pan, wheel zoom, right-drag axis zoom);
-  `ViewBox.setMouseMode(pg.ViewBox.PanMode)`; context menu kept. "Reset zoom" →
-  `self.plot.enableAutoRange()` then `autoRange()`. After first data set, call
+  `ViewBox.setMouseMode(pg.ViewBox.PanMode)`; context menu kept. After first data set, call
   `vb.setLimits(xMin=log10(f_start)-0.5, xMax=log10(f_stop)+0.5)`.
+* **Default view / Reset view:** `_apply_default_view()` = `setLogMode(x=True, y=True)`,
+  `vb.autoRange()` (bounds of the *visible* items; marker lines, texts and cross-hair are
+  `ignoreBounds`; pyqtgraph's size-dependent default padding), then `vb.enableAutoRange()` so the
+  view keeps fitting on curve-visibility and unit changes. `set_results` ends with it, so a fresh
+  compute shows exactly the default view. `reset_view()` applies it, re-applies the marker
+  visibility setting and emits `viewChanged`. Triggers: results-toolbar button "⟲ Reset view",
+  View ▸ Reset View (`QAction`, shortcuts `Ctrl+D` and `Ctrl+0`,
+  `Qt.ApplicationShortcut`; Edit ▸ Duplicate Row moved to `Ctrl+Shift+D`), a "Reset view" entry
+  inserted at the top of the ViewBox context menu, and pyqtgraph's own "View All" entry, whose
+  `triggered` signal is re-connected to `reset_view`. `is_default_view()` checks auto-range on and
+  range == fitted range (tests). Unit switching: in the default view auto-range re-fits; after a
+  manual zoom X is kept and Y shifted (above).
 * Plot state: `ViewBox.sigRangeChanged` and auto-range toggles emit `ImpedancePlot.viewChanged`,
   which schedules an auto-save; `view_state() -> PlotView` and `apply_view_state(PlotView)` convert
   to/from the `session.plots` entry.
@@ -1924,6 +2002,19 @@ on restore, §5.8.3).
   `TextItem` in the top-left corner (pinned via `ViewBox` range change).
 * Export PNG: `pyqtgraph.exporters.ImageExporter(self.plot).export(path)` with width 1600 px.
   (Import `pyqtgraph.exporters` explicitly so PyInstaller collects it.)
+* Export image at a given size (`export_image(path, width, height, keep_zoom)`, used by All
+  Plots): `make_export_copy()` builds an off-screen twin `ImpedancePlot` from the stored results and
+  colours with the same unit, title, marker / plane-only / curve-visibility settings, removes the
+  hover-readout row, sets `WA_DontShowOnScreen`, `resize(width, height)`, `show()`, and renders it
+  twice (`processEvents()` + `grab()`) so axis text widths, legend and layout settle — a plot tab
+  that was never shown otherwise exports with collapsed axes. Then default view (or the source
+  plot's log10 ranges with `padding=0`), one more render, and export of the twin's **scene**
+  (source rect = widget rect, hence exactly width × height): PNG via `ImageExporter` with
+  width/height set using `blockSignal` (they are aspect-linked), SVG via `SVGExporter`. The twin is
+  deleted afterwards; the on-screen plot is untouched.
+* pyqtgraph ≤ 0.14 caveat: `SVGExporter.correctCoordinates` raises `ValueError` on the close-path
+  token `Z` that Qt 6 writes for the ViewBox background path; `_svg_close_path_workaround()`
+  temporarily wraps that module function to strip and re-append `Z` during the export.
 
 ### 5.7 Logging
 
@@ -2759,3 +2850,8 @@ Deviations and clarifications found while reviewing the implementation against t
     `cavity.z_matrix_reference` (tests only). Golden values are unchanged (example project:
     max relative deviation 7.3e-11 vs `tests/data/golden_example.json`). New project key
     `advanced.workers` (§4.7), no schema version change (optional key with default).
+11. **§3.6 rcond screening (post-v0.1.0).** The full batched SVD is replaced by a probe estimate
+    solved in the same LU call plus an exact SVD at frequencies with estimate < 1e-10 and at the 8
+    smallest estimates. `E_SINGULAR` decisions, reported rcond and first offending frequency use
+    exact SVD values; `min_rcond` is unchanged on all tested cases. Large-MLO benchmark: 0.45 s →
+    0.18–0.22 s (2 workers).
