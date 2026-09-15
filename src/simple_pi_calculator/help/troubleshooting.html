@@ -49,7 +49,7 @@ background; hover for the message. Errors in one PWR net never stop the computat
 <tr><td>Results look identical after an edit</td><td>The plot title says "(inputs changed)": results are not recomputed automatically. Press F5. Also check that the edited row is <b>Enabled</b> and assigned to the right PWR name (case-sensitive).</td></tr>
 <tr><td>A plot tab has a red icon</td><td>That PWR failed. Filter the Messages dock by its source <code>PWR:name</code>; typical causes are a missing model file or wrong layer numbers.</td></tr>
 <tr><td>Marker readout shows "n/a"</td><td>The marker frequency is outside the sweep range. Widen f start / f stop.</td></tr>
-<tr><td>VDD on deep planes is much worse than expected</td><td>The via loop length is the depth of the nearer plane; planes deep in the stack give long, inductive vias. Check h_near and L_loop in the Vias tab; consider more vias per decap or a smaller via pitch.</td></tr>
+<tr><td>VDD on deep planes is much worse than expected</td><td>The via loop length is the depth of the nearer plane; planes deep in the stack give long, inductive vias. Check h_near and L_loop in the Vias tab; consider more vias per decap pad or a smaller via pitch.</td></tr>
 <tr><td>Strong peaks near 1 GHz</td><td>Plane resonances of the synthetic plane (W × 1.4·D_ref). Their frequency is indicative only; see <a href="physics.html#geometry">synthetic geometry</a>.</td></tr>
 <tr><td>Computation is slow</td><td>Large planes with small drills need many cavity modes (status bar shows the count); many decaps increase the port count. Reduce the number of sweep points for exploration, or split very large decap rows.</td></tr>
 <tr><td><code>E_SINGULAR</code></td><td>Usually overlapping ports (<code>W_PORT_OVERLAP</code>) combined with ideal zero-impedance models, or zero-length vias. Separate row distances, give models a small ESR/ESL, check layer numbers.</td></tr>
@@ -121,7 +121,7 @@ background; hover for the message. Errors in one PWR net never stop the computat
 <table border="1" cellspacing="0" cellpadding="4" width="100%">
 <tr><th width="30%">Code</th><th>Cause</th><th width="14%">Page</th></tr>
 <tr><td><code>E_VIA_ANTIPAD</code></td><td>Anti-pad ≤ drill.</td><td rowspan="5"><a href="input_vias.html#messages">Vias</a></td></tr>
-<tr><td><code>E_VIA_COUNT</code></td><td>Vias per decap odd or &lt; 2.</td></tr>
+<tr><td><code>E_VIA_COUNT</code></td><td>Vias per decap pad or PAD vias &lt; 1.</td></tr>
 <tr><td><code>E_VIA_PITCH</code></td><td>Via pitch ≤ drill.</td></tr>
 <tr><td><code>W_VIA_PITCH_SMALL</code></td><td>GND via inside the PWR via's anti-pad.</td></tr>
 <tr><td><code>W_VIA_ZERO_LENGTH</code></td><td>Nearer plane is layer 1: zero via length.</td></tr>

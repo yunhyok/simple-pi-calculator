@@ -57,6 +57,6 @@
   <text x="575" y="336" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">w_p = g_p / 0.44705</text>
   <text x="440" y="384" font-family="Arial" font-size="12" fill="#333333">Example D_drill = 0.2 mm, s_v = 1.0 mm:</text>
   <text x="440" y="401" font-family="Arial" font-size="12" fill="#333333">n_p = 1 → w = 0.224 mm;  2 → 0.841 mm;  4 → 1.779 mm;  9 → 3.451 mm</text>
-  <text x="440" y="420" font-family="Arial" font-size="11" fill="#555555">n_p = PAD via count (PAD port) or vias per decap / 2 (decap port).</text>
+  <text x="440" y="420" font-family="Arial" font-size="11" fill="#555555">n_p = PAD vias (PAD port) or vias per decap pad (decap port).</text>
   <text x="440" y="435" font-family="Arial" font-size="11" fill="#555555">The anti-pad diameter does not change the port width.</text>
 </svg>

@@ -102,20 +102,24 @@ def test_via_resistance():
 def test_via_set_impedance(example_stackup):
     f = np.geomspace(1e5, 1e9, 9)
     z2 = decap_via_impedance(f, example_stackup, 7, 9, vs())
-    z4 = decap_via_impedance(f, example_stackup, 7, 9, vs(vias_per_decap=4))
+    z4 = decap_via_impedance(f, example_stackup, 7, 9, vs(vias_per_pad=2))  # 2 PWR + 2 GND
     assert z4 == pytest.approx(z2 / 2, rel=1e-12)
     zp = via_pair_impedance(f, example_stackup, 7, 9, vs())
     assert z2 == pytest.approx(zp, rel=1e-12)
     assert zp.imag == pytest.approx(2 * math.pi * f * 0.866012 * NH, rel=REL_L)
     assert pad_via_impedance(f, example_stackup, 7, 9, vs(pad_via_count=4)) == pytest.approx(
         zp / 4, rel=1e-12)
+    assert decap_via_impedance(f, example_stackup, 7, 9, vs(vias_per_pad=4)) == pytest.approx(
+        zp / 4, rel=1e-12)
+    assert vs(vias_per_pad=3).n_pair_dec == 3  # odd counts are valid (one via per pad each)
     with pytest.raises(InputError) as exc:
-        decap_via_impedance(f, example_stackup, 7, 9, vs(vias_per_decap=3))
+        decap_via_impedance(f, example_stackup, 7, 9, vs(vias_per_pad=0))
     assert exc.value.issues[0].code == "E_VIA_COUNT"
 
 
 @pytest.mark.parametrize("change, code", [
-    (dict(vias_per_decap=3), "E_VIA_COUNT"),
+    (dict(vias_per_pad=0), "E_VIA_COUNT"),
+    (dict(vias_per_pad=1.5), "E_VIA_COUNT"),
     (dict(antipad_diameter_m=D), "E_VIA_ANTIPAD"),
     (dict(via_pitch_m=0.2 * MM), "E_VIA_PITCH"),
     (dict(via_pitch_m=0.3 * MM), "W_VIA_PITCH_SMALL"),

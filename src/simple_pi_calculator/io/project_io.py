@@ -34,7 +34,7 @@ from simple_pi_calculator.constants import (
     DEFAULT_VIA_CONDUCTIVITY_S_PER_M,
     DEFAULT_VIA_MODEL,
     DEFAULT_VIA_PITCH_MM,
-    DEFAULT_VIAS_PER_DECAP,
+    DEFAULT_VIAS_PER_PAD,
     DEFAULT_WORKERS,
     DEFAULT_Z_UNIT,
     MAX_RECENT_FILES,
@@ -68,7 +68,7 @@ class ViaInputs:
     drill_diameter_mm: float = DEFAULT_DRILL_DIAMETER_MM
     antipad_diameter_mm: float = DEFAULT_ANTIPAD_DIAMETER_MM
     via_pitch_mm: float = DEFAULT_VIA_PITCH_MM
-    vias_per_decap: int = DEFAULT_VIAS_PER_DECAP
+    vias_per_pad: int = DEFAULT_VIAS_PER_PAD  #: parallel vias on each decap pad (≥ 1)
     pad_via_count: int = DEFAULT_PAD_VIA_COUNT
 
 
@@ -288,7 +288,7 @@ def project_to_dict(project: Project, anchor_dir: str | None,
         "vias": {"drill_diameter_mm": float(v.drill_diameter_mm),
                  "antipad_diameter_mm": float(v.antipad_diameter_mm),
                  "via_pitch_mm": float(v.via_pitch_mm),
-                 "vias_per_decap": int(v.vias_per_decap),
+                 "vias_per_pad": int(v.vias_per_pad),
                  "pad_via_count": int(v.pad_via_count)},
         "advanced": {"via_model": a.via_model,
                      "plating_thickness_mm": float(a.plating_thickness_mm),
@@ -338,7 +338,7 @@ _TOP_KEYS = {"format", "schema_version", "app_version", "stackup", "vias", "adva
              "decaps", "sweep", "display", "session"}
 _SECTION_KEYS = {
     "stackup": {"source_path", "layers"},
-    "vias": {"drill_diameter_mm", "antipad_diameter_mm", "via_pitch_mm", "vias_per_decap",
+    "vias": {"drill_diameter_mm", "antipad_diameter_mm", "via_pitch_mm", "vias_per_pad",
              "pad_via_count"},
     "advanced": {"via_model", "plating_thickness_mm", "via_conductivity_s_per_m",
                  "mounting_inductance_nh", "s2p_default_mode", "model_search_dir", "workers"},
@@ -540,7 +540,7 @@ def project_from_dict(doc: dict, anchor_dir: str | None,
         antipad_diameter_mm=rd.number(vs, "antipad_diameter_mm", "vias.",
                                       DEFAULT_ANTIPAD_DIAMETER_MM),
         via_pitch_mm=rd.number(vs, "via_pitch_mm", "vias.", DEFAULT_VIA_PITCH_MM),
-        vias_per_decap=rd.integer(vs, "vias_per_decap", "vias.", DEFAULT_VIAS_PER_DECAP),
+        vias_per_pad=rd.integer(vs, "vias_per_pad", "vias.", DEFAULT_VIAS_PER_PAD),
         pad_via_count=rd.integer(vs, "pad_via_count", "vias.", DEFAULT_PAD_VIA_COUNT))
 
     # advanced
@@ -728,7 +728,7 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
         drill_diameter_m=v.drill_diameter_mm * MM,
         antipad_diameter_m=v.antipad_diameter_mm * MM,
         via_pitch_m=v.via_pitch_mm * MM,
-        vias_per_decap=int(v.vias_per_decap),
+        vias_per_pad=int(v.vias_per_pad),
         pad_via_count=int(v.pad_via_count),
         model=a.via_model,  # type: ignore[arg-type]
         plating_thickness_m=a.plating_thickness_mm * MM,

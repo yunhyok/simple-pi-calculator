@@ -1,12 +1,15 @@
-"""Item delegates: file browse, combo box and spin boxes (DESIGN.md §5.5)."""
+"""Item delegates: file browse, combo box, spin boxes and check boxes (DESIGN.md §5.5)."""
 
 from __future__ import annotations
 
 import os
+import time
 from typing import Callable, Sequence
 
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtGui import QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -164,5 +167,61 @@ class DoubleSpinDelegate(QStyledItemDelegate):
             model.setData(index, editor.value(), Qt.ItemDataRole.EditRole)
 
 
-__all__ = ["FileBrowseDelegate", "FileEditor", "ComboDelegate", "SpinDelegate",
+class CheckBoxDelegate(QStyledItemDelegate):
+    """Check-box cell that toggles on a click anywhere in the cell (DESIGN.md §5.5).
+
+    Qt's default only toggles when the click hits the small indicator square at the left edge
+    of the cell (a click elsewhere in the cell silently does nothing), and a double click — the
+    edit gesture of every other cell — toggles a varying number of times depending on which
+    of its events reach the delegate. Here one click anywhere in the cell toggles once, a
+    double click toggles exactly once (its second click is ignored), and Space/Select toggles
+    the current cell.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_toggle: tuple[float, int, int] | None = None  # (time, row, column)
+
+    def _toggle(self, model: QAbstractItemModel, index: Index) -> bool:
+        state = index.data(Qt.ItemDataRole.CheckStateRole)
+        value = state.value if hasattr(state, "value") else state
+        checked = value is not None and int(value) == Qt.CheckState.Checked.value
+        new = Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked
+        self._last_toggle = (time.monotonic(), index.row(), index.column())
+        return bool(model.setData(index, new.value, Qt.ItemDataRole.CheckStateRole))
+
+    def _recently_toggled(self, index: Index) -> bool:
+        if self._last_toggle is None:
+            return False
+        t, row, col = self._last_toggle
+        interval = QApplication.doubleClickInterval() / 1000.0
+        return (row, col) == (index.row(), index.column()) and time.monotonic() - t <= interval
+
+    def editorEvent(self, event: QEvent, model: QAbstractItemModel,  # noqa: N802
+                    option: QStyleOptionViewItem, index: Index) -> bool:
+        flags = index.flags()
+        if not (flags & Qt.ItemFlag.ItemIsUserCheckable) or not (flags & Qt.ItemFlag.ItemIsEnabled):
+            return False
+        etype = event.type()
+        if etype in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease,
+                     QEvent.Type.MouseButtonDblClick):
+            if not isinstance(event, QMouseEvent) \
+                    or event.button() != Qt.MouseButton.LeftButton \
+                    or not option.rect.contains(event.position().toPoint()):
+                return False
+            if etype == QEvent.Type.MouseButtonPress:
+                return False  # the view selects the cell (and commits an open editor)
+            if etype == QEvent.Type.MouseButtonDblClick:
+                # the first click of the double click has already toggled (if it reached us)
+                return True if self._recently_toggled(index) else self._toggle(model, index)
+            if self._recently_toggled(index):
+                return True  # release of the second click of a double click
+            return self._toggle(model, index)
+        if etype == QEvent.Type.KeyPress and isinstance(event, QKeyEvent) \
+                and event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Select):
+            return self._toggle(model, index)
+        return False
+
+
+__all__ = ["FileBrowseDelegate", "CheckBoxDelegate", "FileEditor", "ComboDelegate", "SpinDelegate",
            "DoubleSpinDelegate", "DECAP_FILE_FILTER"]

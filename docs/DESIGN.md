@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Document version | 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
+| Document version | 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
 | Status | Implementation-ready |
 | License of project | MIT |
 | Target platform | Windows 10/11 x64 (development also works on Linux/macOS) |
@@ -53,7 +53,8 @@ not a full-wave field solver.
 * One PAD port near one end of the plane (y = 0.2·D_ref, centred in x).
 * For each decap row assigned to the PWR: N identical decaps in a row across the plane width at
   distance d from the PAD along y.
-* Each decap via set (one PWR via + one GND via, or several pairs) is one cavity port, loaded by
+* Each decap via set (n_pad PWR vias on the decap's PWR pad + n_pad GND vias on its GND pad, i.e.
+  n_pad PWR/GND via pairs; default n_pad = 1) is one cavity port, loaded by
   the decap impedance (one capacitor, or two in parallel for **Dummy Cap** rows, §2.6.5) in series
   with the via impedance.
 * Result Z_PAD(f) = reduced cavity impedance at the PAD port + PAD via impedance.
@@ -63,7 +64,7 @@ not a full-wave field solver.
 | # | Input | Source |
 |---|---|---|
 | 1 | Stack-up | .xlsx (fuzzy headers) |
-| 2 | Common via settings (drill diameter, anti-pad diameter, **via pitch** = PWR–GND via centre spacing (default 1.0 mm), vias per decap, PAD via count; mounting side fixed to Top) | GUI form |
+| 2 | Common via settings (drill diameter, anti-pad diameter, **via pitch** = PWR–GND via centre spacing (default 1.0 mm), **vias per decap pad** n_pad (parallel vias on each of the two decap pads, default 1), **PAD vias (observation pad)** = PWR/GND via pairs at the PAD (default 1); mounting side fixed to Top) | GUI form |
 | 3 | PWR list (name, PWR layer, GND layer, plane width) | .xlsx import or GUI table |
 | 4 | Decap assignment list (incl. optional Dummy Cap flag) | .xlsx import or GUI table |
 | 5 | Decap models | SPICE `.mod` subcircuits (required format), Touchstone v1 `.s2p` (optional) |
@@ -315,7 +316,8 @@ Cluster arrangement (normative): the n_p cavity-crossing vias lie on a square gr
 p_c = √2·s_v (s_v = via pitch, §2.6.2; a checkerboard of alternating PWR and GND vias with nearest
 PWR–GND spacing s_v has same-net pitch √2·s_v), filled row-major with cols = ceil(√n_p) columns
 (via i at column i mod cols, row i div cols). n_p = pad_via_count for the PAD port and
-n_p = vias_per_decap/2 for every decap port. For n_p = 1, g_p = r0 and w_p = 2.2369·r0.
+n_p = n_pad = `vias_per_pad` for every decap port (a decap via set of n_pad PWR + n_pad GND vias has
+n_pad cavity-crossing vias). For n_p = 1, g_p = r0 and w_p = 2.2369·r0.
 
 Values for D_drill = 0.2 mm, s_v = 1.0 mm (p_c = 1.41421 mm): n = 1 → w = 0.22369 mm; n = 2 →
 0.84120 mm; n = 4 → 1.77893 mm; n = 9 → 3.45132 mm.
@@ -330,8 +332,9 @@ single-via port (old rule) 0.20901 nH (+25 %).
 All components (decaps and PAD) are on the **Top** side. The modelled plane is a rectangle
 0 ≤ x ≤ W (width, user input), 0 ≤ y ≤ H (height, derived). Throughout this section a ≡ W and
 b ≡ H in the cavity formulas of §2.4; w_pad is the PAD port width and w (≡ w_dec) the common decap
-port width, both from §2.4.5 (for the defaults, 1 PAD via pair and 2 vias per decap, both equal
-2.2369·r0).
+port width, both from §2.4.5 (for the defaults, 1 PAD via pair and 1 via per decap pad, both equal
+2.2369·r0). Because w enters the x margin m_x, the usable span L_x, the sub-row split and the sub-row
+pitch (§2.5.3) and the overlap/clipping checks, the vias per decap pad also change the placement.
 
 #### 2.5.1 Derived plane height and PAD position
 
@@ -545,18 +548,33 @@ Sanity (D_drill 0.2 mm, t_pl 25 µm, 1 mm, Cu): R = 1.254 mΩ @1 kHz, 1.337 mΩ 
 
 #### 2.6.4 Via impedance per port
 
+A decap always has two pads (PWR and GND). `vias_per_pad` = n_pad (integer ≥ 1, default 1) is the
+number of parallel vias on **each** decap pad, so one decap via set consists of n_pad PWR vias and
+n_pad GND vias, arranged as n_pad PWR/GND pairs at pitch s_v. The PAD (observation port) has its own
+count of PWR/GND via pairs, `pad_via_count` = n_pad,PAD. Both via sets use the same parallel-pair rule:
+
 ```
-Z_viapair(ω) = R_loop(ω) + jω L_loop                                   [Ω]
-n_pair_dec   = vias_per_decap / 2        (vias_per_decap even ≥ 2; else E_VIA_COUNT)
-Z_via,dec(ω) = Z_viapair(ω) / n_pair_dec                               (one decap via set)
-n_pad        = PAD via count (number of PWR/GND via pairs at the PAD, ≥ 1)
-Z_via,pad(ω) = Z_viapair(ω) / n_pad
+Z_viapair(ω)  = R_loop(ω) + jω L_loop                                  [Ω]  one PWR/GND via pair
+n_pair_dec    = n_pad = vias_per_pad        (integer ≥ 1; else E_VIA_COUNT)
+Z_via,dec(ω)  = Z_viapair(ω) / n_pair_dec                              (one decap via set)
+w_dec         = w_p(n_p = n_pair_dec)                                  (§2.4.5 cluster port)
+n_pad,PAD     = pad_via_count               (PWR/GND via pairs at the PAD, integer ≥ 1)
+Z_via,pad(ω)  = Z_viapair(ω) / n_pad,PAD
+w_pad         = w_p(n_p = n_pad,PAD)
 ```
 
-Above the planes, the pairs of one via set are treated as ideal parallel paths (mutual inductance
-between parallel via pairs neglected — optimistic, see §9). Inside the cavity, the via cluster is
-represented by a wider port (w_p from §2.4.5), so additional pairs also reduce the cavity spreading
-inductance. Decap and PAD via sets share the same h_near (§2.6.1).
+Above the planes, the n pairs of one via set are treated as ideal parallel paths, i.e. the loop
+inductance and resistance of the set are those of one pair divided by n (mutual inductance between
+parallel via pairs neglected — optimistic, see §9). Inside the cavity, the n cavity-crossing vias of
+the set (one per pair) are represented by one wider cluster port (w_p from §2.4.5, checkerboard of
+pitch √2·s_v), so additional pairs also reduce the cavity spreading inductance. The rule is identical
+for decap and PAD via sets; they share the same h_near (§2.6.1). Values for D_drill = 0.2 mm,
+s_v = 1 mm: n_pad = 1 → w_dec = 0.22369 mm (the §8 golden values), 2 → 0.84120 mm, 4 → 1.77893 mm.
+
+Schema 1 stored `vias_per_decap` = total PWR + GND vias of a set (even, default 2, n_pair_dec =
+vias_per_decap/2); migration 1 → 2 sets `vias_per_pad = max(1, ceil(vias_per_decap/2))` (odd
+values had been rounded up to the next even count by the v0.1 GUI), so all schema-1 results are
+unchanged (§4.7, §5.8.4).
 
 #### 2.6.5 Dummy Cap option and port loads
 
@@ -924,7 +942,7 @@ user has set them (so the frozen build behaves the same without `threadpoolctl`)
 
 | Cache | Key | Invalidated by | Not invalidated by | Bound |
 |---|---|---|---|---|
-| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths, evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap, PAD via count (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only | 32 entries and 512 MB, LRU; stored read-only |
+| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths, evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap pad, PAD vias (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only | 32 entries and 512 MB, LRU; stored read-only |
 | Decap model (`DecapModelCache`, existing) | abs path, mtime, size, subckt, S2P mode | file edit | — | unbounded (small) |
 | Decap impedance (memo on each cached model object) | exact evaluation frequency vector | new model object (file edit, subckt, mode), sweep | everything else | 8 sweeps per model; warnings replayed on hits |
 
@@ -1268,15 +1286,15 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | Key | Type | Notes |
 |---|---|---|
 | `format` | const `"simple-pi-calculator-project"` | |
-| `schema_version` | int ≥ 1 | current = 1 (`CURRENT_SCHEMA_VERSION`) |
+| `schema_version` | int ≥ 1 | current = 2 (`CURRENT_SCHEMA_VERSION`); 1 = v0.1 with `vias.vias_per_decap` |
 | `app_version` | str | writer version |
 | `stackup.source_path` | str or null | |
 | `stackup.layers[]` | objects `{number:int, name:str, thickness_mm:float, conductivity_s_per_m:float or null, dk:float or null, df:float or null}` | |
 | `vias.drill_diameter_mm` | float > 0 | default 0.2 |
 | `vias.antipad_diameter_mm` | float > drill | default 0.5 |
 | `vias.via_pitch_mm` | float > drill | default 1.0 (PWR–GND via centre spacing s_v) |
-| `vias.vias_per_decap` | even int ≥ 2 | default 2 |
-| `vias.pad_via_count` | int ≥ 1 | default 1 |
+| `vias.vias_per_pad` | int ≥ 1 | default 1; parallel vias on **each** decap pad (n_pad PWR + n_pad GND vias per decap via set, §2.6.4). Schema 1 `vias_per_decap` v → `max(1, ceil(v/2))` |
+| `vias.pad_via_count` | int ≥ 1 | default 1; PWR/GND via pairs at the observation PAD |
 | `advanced.via_model` | `"pair"`/`"goldfarb_pucel"`/`"coax"` | default pair |
 | `advanced.plating_thickness_mm` | float > 0 | default 0.025 |
 | `advanced.via_conductivity_s_per_m` | float > 0 | default 5.8e7 |
@@ -1318,7 +1336,7 @@ Example named project (abridged):
 ```json
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 1,
+  "schema_version": 2,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -1328,7 +1346,7 @@ Example named project (abridged):
     ]
   },
   "vias": {"drill_diameter_mm": 0.2, "antipad_diameter_mm": 0.5, "via_pitch_mm": 1.0,
-           "vias_per_decap": 2, "pad_via_count": 1},
+           "vias_per_pad": 1, "pad_via_count": 1},
   "advanced": {"via_model": "pair", "plating_thickness_mm": 0.025, "via_conductivity_s_per_m": 5.8e7,
                "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null,
                "workers": 0},
@@ -1613,8 +1631,8 @@ class ViaSettings:
     drill_diameter_m: float
     antipad_diameter_m: float
     via_pitch_m: float = 1.0e-3               # s_v, PWR–GND via centre spacing
-    vias_per_decap: int = 2
-    pad_via_count: int = 1
+    vias_per_pad: int = 1                     # n_pad: parallel vias on EACH decap pad
+    pad_via_count: int = 1                    # PWR/GND via pairs at the observation PAD
     model: Literal["pair", "goldfarb_pucel", "coax"] = "pair"
     plating_thickness_m: float = 25e-6
     conductivity: float = 5.8e7
@@ -1639,7 +1657,7 @@ def via_resistance(f_hz: np.ndarray, length_m: float, drill_d_m: float,
                    plating_t_m: float, sigma: float) -> np.ndarray: ...
 def via_pair_impedance(f_hz: np.ndarray, stackup: Stackup, pwr_layer: int, gnd_layer: int,
                        vs: ViaSettings) -> np.ndarray: ...
-def decap_via_impedance(f_hz, stackup, pwr_layer, gnd_layer, vs) -> np.ndarray: ...  # / n_pair_dec
+def decap_via_impedance(f_hz, stackup, pwr_layer, gnd_layer, vs) -> np.ndarray: ...  # / n_pair_dec (= vias_per_pad)
 def pad_via_impedance(f_hz, stackup, pwr_layer, gnd_layer, vs) -> np.ndarray: ...    # / n_pad
 ```
 
@@ -1862,8 +1880,9 @@ class AutosaveStore:                      # Qt-free, unit-testable
     def quarantine(self, path: str, tag: str) -> str: ...        # rename, returns new path
 
 # io/migrations.py
-CURRENT_SCHEMA_VERSION: int = 1
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {}   # n → function converting version n to n+1
+CURRENT_SCHEMA_VERSION: int = 2
+def migrate_1_to_2(doc: dict) -> dict: ...           # vias.vias_per_decap v → vias.vias_per_pad
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2}   # n → version n to n+1
 def migrate(doc: dict, issues: IssueCollector) -> dict: ...
 
 # io/export.py
@@ -1921,7 +1940,10 @@ minimum 1100 × 700.
   2. *Vias* (`ViaPanel`): `QFormLayout` with `QDoubleSpinBox` drill diameter (0.01–5 mm, 3 decimals),
      anti-pad diameter, **Via pitch (PWR–GND via centre spacing, mm)** (0.02–20 mm, 3 decimals,
      default 1.000; tooltip explains that it sets the via-pair loop inductance and, for several
-     pairs, the cluster size), `QSpinBox` vias per decap (step 2, min 2), `QSpinBox` PAD via count, a read-only label
+     pairs, the cluster size), `QSpinBox` **"Vias per decap pad"** (1–32, default 1; tooltip: number of
+     parallel vias on each of the two decap pads, i.e. n PWR + n GND vias per decap via set, Z_via,dec =
+     Z_viapair/n, wider cluster port), `QSpinBox` **"PAD vias (observation pad)"** (1–400; tooltip: PWR/GND
+     via pairs at the observation PAD, independent of the decap setting), a read-only label
      "Decaps and PAD are mounted on the Top side"; derived read-only labels per selected PWR:
      h_near mm, L_loop nH, PAD / decap port width mm. Collapsible `QGroupBox` "Advanced" (via model, plating thickness, via
      conductivity, mounting inductance per capacitor nH, s2p default mode, model search folder).
@@ -1951,7 +1973,12 @@ minimum 1100 × 700.
 * **Status bar**: progress bar, last-compute time, mode count info of current PWR.
 
 Edits mark the project modified and schedule an auto-save (§5.8); results are marked "stale" (plot
-title suffix "(inputs changed)") until recomputed. Auto-compute is not performed on edits (only once
+title suffix "(inputs changed)") until recomputed. Run, Save and window close first commit pending
+edits (`MainWindow.commit_pending_edits`): an open table-cell editor is committed and closed, and a
+focused spin box / line edit that commits on Enter or focus-out is interpreted, because F5, Ctrl+S
+and toolbar buttons do not take the keyboard focus. Check-box cells (Enabled, Dummy Cap) use
+`CheckBoxDelegate`: one click anywhere in the cell toggles once, a double click toggles once, Space
+toggles. Auto-compute is not performed on edits (only once
 on restore, §5.8.3).
 
 ### 5.6 Plot widget (pyqtgraph specifics)
@@ -2126,7 +2153,9 @@ class AutosaveManager(QObject):
 
 * `schema_version` is a single integer shared by named projects and the auto-save;
   `CURRENT_SCHEMA_VERSION = 1` for v0.1.0 (the pre-release geometry with `height_mm`/`pad_*` and
-  side options never shipped and has no migration).
+  side options never shipped and has no migration). **Schema 2**: `vias.vias_per_decap` →
+  `vias.vias_per_pad` (`MIGRATIONS[1] = migrate_1_to_2`, §2.6.4); frozen fixture
+  `tests/data/project_v1.spical.json` (the v0.1 example project).
 * **No bump** for backward-compatible additive changes: a new optional key with a default. Old
   readers ignore unknown keys; new readers default missing keys.
 * **Bump by 1** for any rename, removal, unit or meaning change. Every bump adds a pure function
@@ -2216,7 +2245,7 @@ QTextBrowser supports only Qt's "Supported HTML Subset" [QtHTML]. Pages MUST obe
 | `index.html` | What the tool does, PDN chain diagram, links to all pages |
 | `getting_started.html` | Open example project, run, read markers; step-by-step with screenshots |
 | `input_stackup.html` | Excel columns, accepted header variants, metal/dielectric detection, units, all E_/W_ codes, example table |
-| `input_vias.html` | Drill/anti-pad diameter, via pitch (PWR–GND via spacing) and its effect on loop inductance, vias per decap, PAD via count and via-cluster ports, Top-side mounting, via length to the nearer plane, via model options |
+| `input_vias.html` | Drill/anti-pad diameter, via pitch (PWR–GND via spacing) and its effect on loop inductance, vias per decap pad, PAD vias (observation pad) and via-cluster ports, Top-side mounting, via length to the nearer plane, via model options |
 | `input_pwr.html` | PWR list columns, GND reference choice, derived plane height, validation messages |
 | `input_decaps.html` | Decap list columns, Dummy Cap option (ports and caps per port), path resolution, axial placement and its approximations |
 | `spice_models.html` | Supported .mod syntax, suffix table (incl. `1F` = 1 fF warning), PARAM scoping, examples |
@@ -2457,7 +2486,8 @@ D_drill = 0.2 mm, D_antipad = 0.5 mm, Cu, t_pl = 25 µm unless noted; rel 1e-5 f
   `goldfarb_pucel` → 0.021836 nH and 0.544438 nH; `coax` → 0.055894 nH and 0.411415 nH.
 * `via_resistance`: 1.2544 mΩ @1 kHz, 1.3369 mΩ @1 MHz, 4.8665 mΩ @100 MHz, 13.826 mΩ @1 GHz
   (1 mm) rel 1e-3; at 1 MHz 0.40775 mΩ (0.305 mm) and 3.00130 mΩ (2.245 mm).
-* vias_per_decap = 4 halves the above-plane via-set impedance; odd count → `E_VIA_COUNT`;
+* vias_per_pad = 2 halves and 4 quarters the above-plane via-set impedance (odd counts valid);
+  vias_per_pad = 0 or 1.5 → `E_VIA_COUNT`;
   antipad ≤ drill → `E_VIA_ANTIPAD`; via pitch 0.2 mm (= drill) → `E_VIA_PITCH`; 0.3 mm →
   `W_VIA_PITCH_SMALL`.
 * `port_loads`: synthetic Z_decap = 1 Ω, Z_via,dec = 0.1 Ω, L_mount = 0, caps [2, 2, 1] →
@@ -2529,7 +2559,10 @@ Project files:
 * Round-trip save/load equality (incl. `dummy`); relative path conversion; named file contains no
   `session`; a `session` block in a named file is ignored with info; unknown key warning; defaults
   applied when optional keys (e.g. `dummy`) missing; atomic write leaves no `.tmp` files.
-* `E_PROJECT_NEWER` for `schema_version` 2; `E_PROJECT_FORMAT` for invalid JSON / wrong `format`.
+* `E_PROJECT_NEWER` for `schema_version` = current + 1; `E_PROJECT_FORMAT` for invalid JSON / wrong `format`.
+* `migrate_1_to_2`: `vias_per_decap` 2/4/6/8/3/1/0 → `vias_per_pad` 1/2/3/4/2/1/1, input not mutated;
+  the frozen `tests/data/project_v1.spical.json` loads through the chain (`I_PROJECT_MIGRATED`,
+  no unknown-key warning) with the same inputs as the current example project.
 * Migration framework (monkeypatch `CURRENT_SCHEMA_VERSION = 2`, `MIGRATIONS = {1: fn}` renaming a
   key): v1 file loads migrated, `I_PROJECT_MIGRATED`, modified; first save creates
   `<name>.schema1.bak.spical.json`; migration function does not mutate its input; missing step →
@@ -2565,7 +2598,7 @@ Project files:
    model impedance halved (rel 1e-9); the dummy flag with N = 1 equals the non-dummy result exactly.
 4. **End-to-end bundled example** using `examples/example_project.spical.json` (default sweep
    100 kHz–1 GHz / 400 points; via model `pair`, D_drill 0.2 mm, D_antipad 0.5 mm, via pitch
-   1.0 mm, 2 vias per decap, 1 PAD via pair, L_mount = 0, plating 25 µm, via σ 5.8e7 S/m; plane metal
+   1.0 mm, 1 via per decap pad (one PWR + one GND via per decap, = schema-1 `vias_per_decap = 2`), 1 PAD via pair, L_mount = 0, plating 25 µm, via σ 5.8e7 S/m; plane metal
    Cu 35 µm; decap models of §4.5). Reference values from the design-time prototype implementing
    exactly §2–§3 (v1.2) with the geometry of §2.5; K_split from k_max evaluated on the 400-point grid.
    Tolerance rel 5 % unless noted (to allow legitimate implementation differences such as gmin).
@@ -2624,6 +2657,11 @@ Project files:
 * PWR table derived Height column updates from 21.0 to 28.0 mm when the VDD_CORE 15 mm row is edited
   to 20 mm; `PlacementPreview` paints without exceptions.
 * Save As with name `board` writes `board.spical.json`; Recent Files lists it first.
+* Dummy Cap / count edits reach the computation: example → VDD_CORE counts ×2 via `setData`, Dummy
+  Cap via `CheckStateRole` → Run → markers 2.306 / 18.13 / 129.0 mΩ (differ > 5 % from 3.294 / 35.42 /
+  139.5 mΩ); a count typed into an open cell editor and a via count typed into a spin box are
+  committed by Run; a click in the middle of a check-box cell toggles, a double click toggles once.
+* "Vias per decap pad" spin box (min 1, odd values kept) and "PAD vias (observation pad)" labels.
 
 ### 8.13 Help lint (`test_help_html.py`)
 
@@ -2651,7 +2689,7 @@ Project files:
 5. **Via model:** via-pair (two-conductor, image partial-inductance) loop inductance with a single
    user via pitch for all pairs, plus a coaxial anti-pad segment through the nearer plane; mutual
    inductance between parallel via pairs above the planes is neglected (optimistic for
-   vias_per_decap > 2 and PAD via count > 1); a mounting inductance of 0 nH (default) is optimistic —
+   vias_per_pad > 1 and PAD vias > 1); a mounting inductance of 0 nH (default) is optimistic —
    typical 0402/0603 pad + escape inductance is 0.2–0.6 nH per capacitor; via barrel capacitance,
    stubs below the far plane and vias passing other planes are ignored; the Top-surface end of the
    loop (pads, component body) is not modelled beyond L_mount.
@@ -2762,7 +2800,7 @@ explanations for every code in its area.
 ## Appendix B — Computation pipeline per PWR (normative order)
 
 1. Resolve PlanePair (§2.2, exact complex ε̃_eff); resolve via pitch s_v; port widths w_pad (n = PAD
-   via count) and w_dec (n = vias_per_decap/2) from the via-cluster GMD rule (§2.4.5).
+   vias, `pad_via_count`) and w_dec (n = `vias_per_pad`) from the via-cluster GMD rule (§2.4.5).
 2. Collect enabled decap rows for the PWR; load/cached DecapModel for each; evaluate Z_decap on
    f_eval = grid ∪ markers.
 3. Derive D_ref and H, place PAD and decap ports, compute caps per port (§2.5, §2.6.5); compute
@@ -2855,3 +2893,18 @@ Deviations and clarifications found while reviewing the implementation against t
     smallest estimates. `E_SINGULAR` decisions, reported rcond and first offending frequency use
     exact SVD values; `min_rcond` is unchanged on all tested cases. Large-MLO benchmark: 0.45 s →
     0.18–0.22 s (2 workers).
+12. **Dummy Cap bug report (post-v0.1.0).** The engine and the table models were correct; inputs
+    could be lost in the GUI: (a) Run (F5, menu, toolbar), Save and close did not commit an open
+    cell editor or a spin box with keyboard tracking off, so a typed count was ignored although
+    visible; (b) Qt's check-box cell toggles only when the 14-px indicator is hit, and a double
+    click did not reliably toggle once. Fixed by `MainWindow.commit_pending_edits` and
+    `CheckBoxDelegate` (§5.5). Physics check of the report (VDD_CORE, counts ×2): 10 MHz reads
+    18.13 mΩ with Dummy Cap vs 23.15 mΩ without because 10 MHz lies just above the anti-resonance
+    between the 10 µF bank and the 100 nF bank; halving the via sets raises the bank-to-bank loop
+    inductance by ≈ 20 % and moves the peak from 9.66 to 8.81 MHz at nearly the same height
+    (23.6 vs 23.8 mΩ). No sub-row splitting occurs (L_x/P ≫ w). With identical port positions the
+    §2.6.5 load rule is reproduced exactly (`test_dummy_load_rule_with_identical_positions`).
+13. **Schema 2, `vias_per_pad` (§2.6.4, §4.7).** "Vias per decap pad" replaces "Vias per decap"
+    (even total). Engine behaviour for n_pad = vias_per_decap/2 is unchanged, so the §8 golden
+    values (1 PWR + 1 GND via per decap = `vias_per_pad = 1`) are unchanged (max. rel. deviation
+    < 1e-6 vs `tests/data/golden_example.json`).

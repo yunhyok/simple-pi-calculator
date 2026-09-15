@@ -9,12 +9,34 @@ monkeypatch them.
 from __future__ import annotations
 
 import copy
+import math
 from typing import Callable
 
 from simple_pi_calculator.errors import IssueCollector, ProjectFormatError, ProjectTooNewError
 
-CURRENT_SCHEMA_VERSION: int = 1
-MIGRATIONS: dict[int, Callable[[dict], dict]] = {}
+CURRENT_SCHEMA_VERSION: int = 2
+
+
+def migrate_1_to_2(doc: dict) -> dict:
+    """Schema 1 → 2: ``vias.vias_per_decap`` (PWR + GND vias of one decap via set, even, default
+    2) becomes ``vias.vias_per_pad`` (parallel vias on each decap pad, default 1).
+
+    n_pad = max(1, ceil(v/2)): 2 → 1, 4 → 2, and an odd v (which the v0.1 GUI rounded up to the
+    next even count) → (v+1)/2, so every valid schema-1 project computes identically.
+    A non-numeric value is carried over unchanged for the reader to reject.
+    """
+    out = copy.deepcopy(doc)
+    vias = out.get("vias")
+    if isinstance(vias, dict) and "vias_per_decap" in vias:
+        value = vias.pop("vias_per_decap")
+        if isinstance(value, (int, float)) and not isinstance(value, bool) \
+                and math.isfinite(value):
+            value = max(1, int(math.ceil(value / 2.0)))
+        vias.setdefault("vias_per_pad", value)
+    return out
+
+
+MIGRATIONS: dict[int, Callable[[dict], dict]] = {1: migrate_1_to_2}
 
 
 def schema_version_of(doc: dict) -> int:
@@ -55,5 +77,5 @@ def migrate(doc: dict, issues: IssueCollector) -> dict:
     return out
 
 
-__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "schema_version_of",
+__all__ = ["CURRENT_SCHEMA_VERSION", "MIGRATIONS", "migrate", "migrate_1_to_2", "schema_version_of",
            "ProjectFormatError", "ProjectTooNewError"]

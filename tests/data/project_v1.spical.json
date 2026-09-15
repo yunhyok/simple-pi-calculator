@@ -1,6 +1,6 @@
 {
   "format": "simple-pi-calculator-project",
-  "schema_version": 2,
+  "schema_version": 1,
   "app_version": "0.1.0",
   "stackup": {
     "source_path": "stackup_6L.xlsx",
@@ -99,7 +99,7 @@
     "drill_diameter_mm": 0.2,
     "antipad_diameter_mm": 0.5,
     "via_pitch_mm": 1.0,
-    "vias_per_pad": 1,
+    "vias_per_decap": 2,
     "pad_via_count": 1
   },
   "advanced": {
@@ -108,8 +108,7 @@
     "via_conductivity_s_per_m": 58000000.0,
     "mounting_inductance_nh": 0.0,
     "s2p_default_mode": "series",
-    "model_search_dir": null,
-    "workers": 0
+    "model_search_dir": null
   },
   "pwr": {
     "source_path": "pwr_list.xlsx",

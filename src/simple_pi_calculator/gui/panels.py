@@ -43,6 +43,7 @@ from simple_pi_calculator.constants import (
 from simple_pi_calculator.core.stackup import is_metal_conductivity
 from simple_pi_calculator.core.units import format_frequency, parse_frequency
 from simple_pi_calculator.gui.delegates import (
+    CheckBoxDelegate,
     ComboDelegate,
     DoubleSpinDelegate,
     FileBrowseDelegate,
@@ -302,24 +303,31 @@ class ViaPanel(QWidget):
         super().__init__(parent)
         self._project: Any = None
         outer = QVBoxLayout(self)
-        form = QFormLayout()
+        form = self.form = QFormLayout()
         self.drill = _dspin(self, 0.01, 5.0, 3, 0.01, " mm")
         self.antipad = _dspin(self, 0.01, 10.0, 3, 0.01, " mm")
         self.pitch = _dspin(self, 0.02, 20.0, 3, 0.05, " mm")
         self.pitch.setToolTip("PWR–GND via centre spacing. It sets the via-pair loop inductance "
                               "and, for several pairs, the via-cluster size (port width).")
-        self.vias_per_decap = QSpinBox(self)
-        self.vias_per_decap.setRange(2, 64)
-        self.vias_per_decap.setSingleStep(2)
-        self.vias_per_decap.setKeyboardTracking(False)
+        self.vias_per_pad = QSpinBox(self)
+        self.vias_per_pad.setRange(1, 32)
+        self.vias_per_pad.setKeyboardTracking(False)
+        self.vias_per_pad.setToolTip(
+            "Number of parallel vias on EACH of the two pads of one decap (default 1; 2 and 4 "
+            "are common).\nA decap via set is then n PWR vias + n GND vias = n PWR/GND via "
+            "pairs in parallel:\nZ_via,dec = Z_viapair / n, and the cavity port of the set "
+            "widens to the via cluster (GMD rule).")
         self.pad_vias = QSpinBox(self)
         self.pad_vias.setRange(1, 400)
         self.pad_vias.setKeyboardTracking(False)
+        self.pad_vias.setToolTip(
+            "Number of PWR/GND via pairs at the observation PAD (the IC pad where |Z| is "
+            "computed).\nIndependent of the decap via setting: Z_via,pad = Z_viapair / count.")
         form.addRow("Drill diameter", self.drill)
         form.addRow("Anti-pad diameter", self.antipad)
         form.addRow("Via pitch (PWR–GND via centre spacing)", self.pitch)
-        form.addRow("Vias per decap", self.vias_per_decap)
-        form.addRow("PAD via count", self.pad_vias)
+        form.addRow("Vias per decap pad", self.vias_per_pad)
+        form.addRow("PAD vias (observation pad)", self.pad_vias)
         form.addRow("", QLabel("Decaps and PAD are mounted on the Top side", self))
         outer.addLayout(form)
 
@@ -381,14 +389,14 @@ class ViaPanel(QWidget):
         for spin in (self.drill, self.antipad, self.pitch, self.plating, self.conductivity,
                      self.mounting):
             spin.valueChanged.connect(self._write)
-        for spin in (self.vias_per_decap, self.pad_vias, self.workers):
+        for spin in (self.vias_per_pad, self.pad_vias, self.workers):
             spin.valueChanged.connect(self._write)
         self.via_model.currentIndexChanged.connect(self._write)
         self.s2p_mode.currentIndexChanged.connect(self._write)
         self.search_dir.editingFinished.connect(self._write)
 
     def _widgets(self) -> list[QWidget]:
-        return [self.drill, self.antipad, self.pitch, self.vias_per_decap, self.pad_vias,
+        return [self.drill, self.antipad, self.pitch, self.vias_per_pad, self.pad_vias,
                 self.via_model, self.plating, self.conductivity, self.mounting, self.s2p_mode,
                 self.search_dir, self.workers]
 
@@ -400,7 +408,7 @@ class ViaPanel(QWidget):
             self.drill.setValue(v.drill_diameter_mm)
             self.antipad.setValue(v.antipad_diameter_mm)
             self.pitch.setValue(v.via_pitch_mm)
-            self.vias_per_decap.setValue(int(v.vias_per_decap))
+            self.vias_per_pad.setValue(int(v.vias_per_pad))
             self.pad_vias.setValue(int(v.pad_via_count))
             i = self.via_model.findData(a.via_model)
             self.via_model.setCurrentIndex(max(i, 0))
@@ -421,12 +429,7 @@ class ViaPanel(QWidget):
         v.drill_diameter_mm = float(self.drill.value())
         v.antipad_diameter_mm = float(self.antipad.value())
         v.via_pitch_mm = float(self.pitch.value())
-        vpd = int(self.vias_per_decap.value())
-        if vpd % 2:  # typed odd value: round up to the next even count and show it (§2.6.4)
-            vpd += 1
-            with QSignalBlocker(self.vias_per_decap):
-                self.vias_per_decap.setValue(vpd)
-        v.vias_per_decap = vpd
+        v.vias_per_pad = int(self.vias_per_pad.value())
         v.pad_via_count = int(self.pad_vias.value())
         a.via_model = str(self.via_model.currentData() or "pair")
         a.plating_thickness_mm = float(self.plating.value())
@@ -481,6 +484,8 @@ class PwrPanel(QWidget):
         self.table = QTableView(splitter)
         _setup_table(self.table)
         self.table.setModel(model)
+        self.table.setItemDelegateForColumn(PwrTableModel.COL_ENABLED,
+                                            CheckBoxDelegate(self.table))
         self.table.setItemDelegateForColumn(PwrTableModel.COL_LAYER,
                                             SpinDelegate(self.table, 1, 999))
         self.table.setItemDelegateForColumn(PwrTableModel.COL_GND,
@@ -585,6 +590,8 @@ class DecapPanel(QWidget):
         self.table = QTableView(self)
         _setup_table(self.table)
         self.table.setModel(self.proxy)
+        for col in (DecapTableModel.COL_ENABLED, DecapTableModel.COL_DUMMY):
+            self.table.setItemDelegateForColumn(col, CheckBoxDelegate(self.table))
         self.table.setItemDelegateForColumn(DecapTableModel.COL_PWR,
                                             ComboDelegate(self.table, pwr_names, editable=True))
         self.table.setItemDelegateForColumn(DecapTableModel.COL_FILE,

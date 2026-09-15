@@ -99,6 +99,6 @@
   <text x="345" y="436" font-family="Arial" font-size="12" fill="#444444">only the via continuing to the far plane passes the anti-pad</text>
   <text x="35" y="459" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_viapair = R_loop(f) + jω·L_loop</text>
   <text x="345" y="459" font-family="Arial" font-size="12" fill="#444444">R_loop: plated barrel with skin effect, length h_R = 2·h_near + t_near</text>
-  <text x="35" y="482" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_via,dec = Z_viapair / (vias per decap / 2)</text>
-  <text x="345" y="482" font-family="Arial" font-size="12" fill="#444444">Z_via,pad = Z_viapair / (PAD via count)</text>
+  <text x="35" y="482" font-family="Arial" font-size="13" font-weight="bold" fill="#222222">Z_via,dec = Z_viapair / (vias per decap pad)</text>
+  <text x="345" y="482" font-family="Arial" font-size="12" fill="#444444">Z_via,pad = Z_viapair / (PAD vias)</text>
 </svg>

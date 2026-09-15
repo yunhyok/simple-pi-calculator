@@ -166,7 +166,9 @@ comments `*`, `;`, `$`; `+` continuation lines; UTF-8 (with or without BOM) or L
 Touchstone: v1 `.s2p` with `# HZ|KHZ|MHZ|GHZ S MA|DB|RI R z0`.
 
 **Other inputs (GUI):** via drill and anti-pad diameter, via pitch (PWR–GND via spacing, default
-1.0 mm), vias per decap (even, default 2), PAD via count (default 1), sweep 100 kHz–1 GHz with 400
+1.0 mm), **vias per decap pad** (parallel vias on each of the two decap pads, default 1, i.e. one
+PWR via + one GND via per decap; 2 and 4 are common), **PAD vias (observation pad)** (PWR/GND via
+pairs at the IC PAD, default 1), sweep 100 kHz–1 GHz with 400
 log points by default (1 kHz ≤ f ≤ 20 GHz, 10–5000 points).
 
 ## Modelling summary
@@ -211,7 +213,8 @@ equations in `docs/DESIGN.md` §2 and in Help ▸ Physics).
 * **Plane conductors** use the finite-thickness skin-effect surface impedance; copper is smooth.
 * **Via pair** = one PWR via + one GND via at the via pitch: image partial-inductance loop from the
   top surface to the nearer plane plus a coaxial anti-pad segment through that plane, and a
-  skin-effect barrel resistance (plating 25 µm by default). Several via pairs per decap or at the PAD
+  skin-effect barrel resistance (plating 25 µm by default). With n vias on each decap pad a decap via
+  set is n PWR/GND pairs; several via pairs per decap or at the PAD
   are ideal parallel paths above the planes (no mutual inductance) and widen the cavity port as a via
   cluster on a √2·pitch checkerboard.
 * **Cavity ports** are squares with the geometric-mean-distance equivalent width of the via or via

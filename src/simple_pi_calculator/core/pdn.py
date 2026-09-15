@@ -345,7 +345,7 @@ def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         issues.extend(probe.errors)
         raise InputError(probe.errors)
     w_pad = cluster_port_width(vias.n_pad, vias.drill_diameter_m, vias.via_pitch_m)
-    w_dec = cluster_port_width(vias.n_pair_dec, vias.drill_diameter_m, vias.via_pitch_m)
+    w_dec = cluster_port_width(vias.n_pair_dec, vias.drill_diameter_m, vias.via_pitch_m)  # n_pad
 
     f_eval, grid_idx, marker_f, marker_idx = evaluation_frequencies(f_grid_hz, marker_f_hz)
     grid = f_eval[grid_idx]

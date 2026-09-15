@@ -233,7 +233,7 @@ class EngineBridge:
         drill = v.drill_diameter_mm * MM
         pitch = v.via_pitch_mm * MM
         w_pad = cluster_port_width(max(1, int(v.pad_via_count)), drill, pitch)
-        w_dec = cluster_port_width(max(1, int(v.vias_per_decap) // 2), drill, pitch)
+        w_dec = cluster_port_width(max(1, int(v.vias_per_pad)), drill, pitch)
         return w_pad, w_dec
 
     @staticmethod
@@ -309,7 +309,7 @@ class EngineBridge:
                 vs = via.ViaSettings(
                     drill_diameter_m=v.drill_diameter_mm * MM,
                     antipad_diameter_m=v.antipad_diameter_mm * MM,
-                    via_pitch_m=v.via_pitch_mm * MM, vias_per_decap=int(v.vias_per_decap),
+                    via_pitch_m=v.via_pitch_mm * MM, vias_per_pad=int(v.vias_per_pad),
                     pad_via_count=int(v.pad_via_count), model=a.via_model,
                     plating_thickness_m=a.plating_thickness_mm * MM,
                     conductivity=a.via_conductivity_s_per_m)

@@ -118,6 +118,64 @@ def test_dummy_equivalence():
     assert np.array_equal(z_d1, z_n1)
 
 
+def _example_core_groups(inputs, mult, dummy, scale=1.0):
+    """VDD_CORE decap groups of the example with counts × ``mult`` and model impedance × scale."""
+    from simple_pi_calculator.core.decap_model import DecapModelCache
+    from simple_pi_calculator.core.types import resolve_model_path
+    cache = DecapModelCache()
+    groups = []
+    for row in inputs.decap_rows:
+        if row.pwr_name != "VDD_CORE":
+            continue
+        path = resolve_model_path(row.model_file, inputs.decap_source_dir, inputs.project_dir)
+        model = cache.get(path, row.subckt, "series", IssueCollector())
+        if scale != 1.0:
+            model = FuncModel(lambda f, m=model: scale * np.asarray(m.impedance(f)))
+        groups.append(DecapGroup("VDD_CORE", model, row.count * mult, row.distance_m, dummy))
+    return groups
+
+
+def _core_run(inputs, groups, f):
+    pwr = next(p for p in inputs.pwrs if p.name == "VDD_CORE")
+    return compute_pwr(inputs.stackup, pwr, groups, inputs.vias, f, [1e6, 1e7, 1e8], False,
+                       IssueCollector(), workers=1)
+
+
+def test_dummy_load_rule_with_identical_positions(example_inputs):
+    """§2.6.5 with the placement forced identical: 2N caps on N via sets (Dummy Cap) equal N
+    ports loaded by Z_cap/2 + Z_via,dec — the shared via set is in series and not divided."""
+    f = np.geomspace(1e5, 1e9, 120)
+    dummy = _core_run(example_inputs, _example_core_groups(example_inputs, 2, True), f)
+    half = _core_run(example_inputs, _example_core_groups(example_inputs, 1, False, 0.5), f)
+    assert np.array_equal(dummy.placement.xy_m, half.placement.xy_m)  # same ports, same places
+    assert dummy.placement.caps_per_port.tolist() == [2] * 14
+    assert np.max(np.abs(dummy.z_pad / half.z_pad - 1.0)) < 1e-9
+    # ... and differ from the original N single-cap ports (the flag is not a no-op)
+    single = _core_run(example_inputs, _example_core_groups(example_inputs, 1, False), f)
+    assert np.max(np.abs(dummy.z_pad / single.z_pad - 1.0)) > 0.1
+
+
+def test_dummy_ten_mhz_is_an_antiresonance_shift(example_inputs):
+    """User observation: VDD_CORE with 2× count, 10 MHz is lower with Dummy Cap (18.1 mΩ) than
+    without (23.2 mΩ). 10 MHz lies on the anti-resonance between the 10 µF bank (inductive) and
+    the 100 nF bank (capacitive). Halving the via sets raises the bank-to-bank loop inductance
+    by ≈ 20 %, which moves the peak down by ≈ 1/√1.2 (9.66 → 8.81 MHz) at almost the same peak
+    height, so 10 MHz is further down the peak's upper flank. Expected, not a bug."""
+    f = np.geomspace(5e6, 11e6, 301)  # between the two series resonances (≈1 and ≈12 MHz)
+    runs = {}
+    for key, mult, dummy in (("2x", 2, False), ("2x_dummy", 2, True)):
+        r = _core_run(example_inputs, _example_core_groups(example_inputs, mult, dummy), f)
+        z = np.abs(r.z_pad)
+        i = int(np.argmax(z))
+        runs[key] = (f[i], z[i], abs(r.marker_z[0]))  # marker 10 MHz
+    (f2, p2, z2), (fd, pd, zd) = runs["2x"], runs["2x_dummy"]
+    assert (z2, zd) == pytest.approx((23.15e-3, 18.13e-3), rel=5e-3)
+    assert f2 == pytest.approx(9.66e6, rel=0.01) and fd == pytest.approx(8.81e6, rel=0.01)
+    assert pd == pytest.approx(p2, rel=0.03)  # same peak height ...
+    assert (f2 / fd) ** 2 == pytest.approx(1.20, abs=0.03)  # ... shifted by the L ratio
+    assert fd < f2 < 10e6  # both peaks below 10 MHz: the lower one reads lower at 10 MHz
+
+
 # 4 -------------------------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def example_inputs():
@@ -211,6 +269,25 @@ def test_vdd_io_four_pad_vias(example_inputs):
         assert _z_at(r, f) == pytest.approx(e, rel=0.10), f"@ {f:g} Hz"
     plane_1m = abs(r.marker_z_plane_only[0])
     assert plane_1m == pytest.approx(995.1, rel=0.03)
+
+
+@pytest.mark.parametrize("n_pad, w_mm", [(2, 0.84120), (4, 1.77893)])
+def test_vias_per_decap_pad(example_inputs, example_results, n_pad, w_mm):
+    """§2.6.4: n vias on each decap pad = n PWR/GND pairs in parallel: Z_via,dec = Z_viapair/n
+    and a via-cluster decap port of n cavity-crossing vias (§2.4.5); the PAD is unchanged."""
+    inputs = dataclasses.replace(example_inputs,
+                                 vias=dataclasses.replace(example_inputs.vias, vias_per_pad=n_pad))
+    assert inputs.vias.n_pair_dec == n_pad
+    results, issues = compute_project(inputs)
+    assert not [i for i in issues if i.severity.name == "ERROR"]
+    base = example_results[0]
+    for r in results:
+        assert r.info["w_dec_m"] == pytest.approx(w_mm * MM, rel=1e-5)
+        assert r.info["w_pad_m"] == pytest.approx(0.22369 * MM, rel=1e-5)
+        assert np.all(r.placement.port_widths_m[1:] == r.info["w_dec_m"])
+        assert r.info["P"] == base[r.name].info["P"]
+        # more parallel vias per decap: lower |Z| above the capacitive region
+        assert np.all(np.abs(r.marker_z[1:]) < np.abs(base[r.name].marker_z[1:]))
 
 
 def _golden_doc(results):

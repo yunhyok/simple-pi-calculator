@@ -149,7 +149,7 @@ def test_unknown_keys_warn(tmp_path: Path):
 def test_defaults_for_missing_optional_keys(tmp_path: Path):
     doc = {
         "format": "simple-pi-calculator-project",
-        "schema_version": 1,
+        "schema_version": migrations.CURRENT_SCHEMA_VERSION,
         "pwr": {"rows": [{"name": "VDD", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60}]},
         "decaps": {"rows": [{"pwr_name": "VDD", "model_file": "a.mod", "count": 2,
                              "distance_mm": 5}]},
@@ -162,7 +162,8 @@ def test_defaults_for_missing_optional_keys(tmp_path: Path):
     assert row.dummy is False and row.enabled is True and row.subckt is None and row.s2p_mode is None
     assert row.model_file == str(tmp_path / "a.mod")
     assert project.pwr_rows[0].enabled is True
-    assert project.vias.vias_per_decap == 2 and project.vias.antipad_diameter_mm == 0.5
+    assert project.vias.vias_per_pad == 1 and project.vias.antipad_diameter_mm == 0.5
+    assert project.vias.pad_via_count == 1
     assert project.advanced.s2p_default_mode == "series"
     assert project.sweep.f_stop_hz == 1e9 and project.sweep.show_plane_only is False
     assert project.layers == []
@@ -184,12 +185,12 @@ def test_model_file_resolved_relative_to_excel_folder(tmp_path: Path):
 # ---------------------------------------------------------------------------------------------
 def test_newer_schema_rejected(tmp_path: Path):
     doc = project_to_dict(Project(), str(tmp_path), None)
-    doc["schema_version"] = 2
+    doc["schema_version"] = migrations.CURRENT_SCHEMA_VERSION + 1
     path = tmp_path / "n.spical.json"
     path.write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(ProjectTooNewError) as exc:
         load_project(path)
-    assert exc.value.schema_version == 2
+    assert exc.value.schema_version == migrations.CURRENT_SCHEMA_VERSION + 1
     assert exc.value.issue.code == "E_PROJECT_NEWER"
 
 
@@ -232,11 +233,14 @@ def test_migration_chain(tmp_path: Path, monkeypatch):
     v1 = project_to_dict(_sample_project(tmp_path), str(tmp_path), None)
     v1.pop("display")
     v1["view"] = {"unit": "ohm"}   # the (hypothetical) version-1 spelling
+    v1["schema_version"] = 1
+    v1["vias"]["vias_per_decap"] = 2 * v1["vias"].pop("vias_per_pad")
     path = tmp_path / "old.spical.json"
     path.write_text(json.dumps(v1), encoding="utf-8")
 
     monkeypatch.setattr(migrations, "CURRENT_SCHEMA_VERSION", 2)
-    monkeypatch.setattr(migrations, "MIGRATIONS", {1: _rename_display_key})
+    monkeypatch.setattr(migrations, "MIGRATIONS",
+                        {1: lambda d: _rename_display_key(migrations.migrate_1_to_2(d))})
 
     snapshot = copy.deepcopy(v1)
     migrated = _rename_display_key(v1)
@@ -257,6 +261,41 @@ def test_migration_chain(tmp_path: Path, monkeypatch):
     assert project.migrated_from is None
 
 
+@pytest.mark.parametrize("old, new", [(2, 1), (4, 2), (6, 3), (8, 4), (3, 2), (1, 1), (0, 1)])
+def test_migrate_1_to_2_vias_per_decap(old, new):
+    """Schema 2: ``vias_per_decap`` (PWR + GND vias of a set) → ``vias_per_pad`` (vias on each
+    decap pad) = max(1, ceil(v/2)); odd v was rounded up to v+1 by the v0.1 GUI."""
+    doc = {"format": "simple-pi-calculator-project", "schema_version": 1,
+           "vias": {"drill_diameter_mm": 0.2, "vias_per_decap": old, "pad_via_count": 3}}
+    snapshot = copy.deepcopy(doc)
+    out = migrations.migrate_1_to_2(doc)
+    assert doc == snapshot
+    assert out["vias"] == {"drill_diameter_mm": 0.2, "vias_per_pad": new, "pad_via_count": 3}
+    assert migrations.migrate_1_to_2({"format": "x", "schema_version": 1}) == \
+        {"format": "x", "schema_version": 1}
+
+
+def test_frozen_schema_1_fixture_loads_through_chain(tmp_path: Path):
+    """§5.8.4: the frozen v0.1 example (schema 1, ``vias_per_decap: 2``) migrates to schema 2
+    with ``vias_per_pad = 1`` and gives exactly the inputs of the current example project."""
+    fixture = Path(__file__).parent / "data" / "project_v1.spical.json"
+    raw = json.loads(fixture.read_text(encoding="utf-8"))
+    assert raw["schema_version"] == 1 and raw["vias"]["vias_per_decap"] == 2
+    project, issues = load_project(fixture)
+    assert "I_PROJECT_MIGRATED" in _codes(issues)
+    assert "W_PROJECT_UNKNOWN_KEY" not in _codes(issues)
+    assert project.migrated_from == 1
+    assert project.vias.vias_per_pad == 1 and project.vias.pad_via_count == 1
+    current, _ = load_project(Path(__file__).parent.parent / "examples"
+                              / "example_project.spical.json")
+    assert project.vias == current.vias
+    assert [(r.count, r.distance_mm, r.dummy) for r in project.decap_rows] == \
+        [(r.count, r.distance_mm, r.dummy) for r in current.decap_rows]
+    doc = project_to_dict(project, str(tmp_path), None)
+    assert doc["schema_version"] == migrations.CURRENT_SCHEMA_VERSION == 2
+    assert "vias_per_decap" not in doc["vias"] and doc["vias"]["vias_per_pad"] == 1
+
+
 def test_migration_missing_step(monkeypatch):
     monkeypatch.setattr(migrations, "CURRENT_SCHEMA_VERSION", 3)
     monkeypatch.setattr(migrations, "MIGRATIONS", {1: lambda d: dict(d)})
@@ -266,7 +305,8 @@ def test_migration_missing_step(monkeypatch):
 
 
 def test_migrate_current_is_identity():
-    doc = {"format": "simple-pi-calculator-project", "schema_version": 1}
+    doc = {"format": "simple-pi-calculator-project",
+           "schema_version": migrations.CURRENT_SCHEMA_VERSION}
     issues = IssueCollector()
     assert migrations.migrate(doc, issues) is doc
     assert not issues.issues

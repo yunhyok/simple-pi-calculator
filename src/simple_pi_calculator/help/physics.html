@@ -126,8 +126,12 @@ inductances of two parallel barrels of length h_near at pitch s_v with the neare
 <pre>
 L_loop    = L_pair(h_near, s_v) + L_ap          L_pair → (µ0·h_near/π)·ln(s_v/r0) for long vias
 Z_viapair = R_loop(f) + jω·L_loop
-Z_via,dec = Z_viapair / (vias per decap / 2)    Z_via,pad = Z_viapair / (PAD via count)
+Z_via,dec = Z_viapair / n_pad                   Z_via,pad = Z_viapair / (PAD vias)
 </pre>
+<p>n_pad is the number of vias on <b>each</b> decap pad: a decap via set has n_pad PWR vias and n_pad GND
+vias, i.e. n_pad via pairs in parallel. The same parallel-pair rule is used at the observation PAD. In the
+cavity, the n_p vias of a set that cross the plane gap form one wider square port of equal geometric mean
+distance (n_p = n_pad for a decap, PAD vias for the PAD).</p>
 <p>Rule of thumb: close to 0.9 nH per mm of via length for a 0.2 mm via with 1 mm pitch when the via is much
 longer than the pitch (0.77 nH for exactly 1 mm, because of end effects). Details and examples:
 <a href="input_vias.html">Via settings</a>.</p>

@@ -69,7 +69,7 @@ X_MARGIN_FACTOR: float = 0.1  #: m_x = w/2 + 0.1·W
 DEFAULT_DRILL_DIAMETER_MM: float = 0.2
 DEFAULT_ANTIPAD_DIAMETER_MM: float = 0.5
 DEFAULT_VIA_PITCH_MM: float = 1.0
-DEFAULT_VIAS_PER_DECAP: int = 2
+DEFAULT_VIAS_PER_PAD: int = 1  #: parallel vias on each decap pad (PWR pad and GND pad)
 DEFAULT_PAD_VIA_COUNT: int = 1
 DEFAULT_VIA_MODEL: str = "pair"
 VIA_MODELS: tuple[str, ...] = ("pair", "goldfarb_pucel", "coax")

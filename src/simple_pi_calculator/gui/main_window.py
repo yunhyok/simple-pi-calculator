@@ -12,7 +12,12 @@ from PySide6.QtCore import QThread, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, QGuiApplication, \
     QKeySequence
 from PySide6.QtWidgets import (
+    QAbstractItemDelegate,
+    QAbstractItemView,
+    QAbstractSpinBox,
+    QApplication,
     QCheckBox,
+    QLineEdit,
     QDialog,
     QFileDialog,
     QMenu,
@@ -748,6 +753,7 @@ class MainWindow(QMainWindow):
             if self._thread is not None:
                 self._thread.quit()
                 self._thread.wait(5000)
+        self.commit_pending_edits()
         self._flush_autosave()
         self._save_settings()
         if self.autosave is not None:
@@ -883,6 +889,7 @@ class MainWindow(QMainWindow):
         return self._save_to(ensure_project_suffix(path))
 
     def _save_to(self, path: str) -> bool:
+        self.commit_pending_edits()
         path = os.path.abspath(path)
         try:
             save_project(self.project, path)
@@ -1309,9 +1316,35 @@ class MainWindow(QMainWindow):
     def is_computing(self) -> bool:
         return self._thread is not None
 
+    def commit_pending_edits(self) -> None:
+        """Write input values that are still only in an editor into the project (§5.5).
+
+        Run (F5, menu, toolbar), Save (Ctrl+S) and the export actions do not take the keyboard
+        focus, so a table cell whose editor is still open, or a spin box / line edit that commits
+        on focus-out or Enter (keyboard tracking off), would otherwise be ignored: the
+        computation used the previous value although the new one is visible.
+        """
+        for view in (self.stackup_panel.table, self.pwr_panel.table, self.decap_panel.table):
+            if view.state() != QAbstractItemView.State.EditingState:
+                continue
+            index = view.currentIndex()
+            editor = view.indexWidget(index) if index.isValid() else None
+            if editor is not None:
+                view.commitData(editor)
+                view.closeEditor(editor, QAbstractItemDelegate.EndEditHint.NoHint)
+        focus = QApplication.focusWidget()
+        if focus is None or not self.input_tabs.isAncestorOf(focus):
+            return
+        spin = focus if isinstance(focus, QAbstractSpinBox) else focus.parentWidget()
+        if isinstance(spin, QAbstractSpinBox):
+            spin.interpretText()  # emits valueChanged if the typed text differs
+        elif isinstance(focus, QLineEdit) and focus.isModified():
+            focus.editingFinished.emit()
+
     def start_compute(self, auto: bool = False) -> bool:
         if self.is_computing():
             return False
+        self.commit_pending_edits()
         self.message_dock.clear_category("compute")
         self.message_dock.clear_category("validation")
         try:

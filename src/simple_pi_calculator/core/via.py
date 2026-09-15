@@ -1,6 +1,7 @@
 """Via-pair loop impedance above the planes (DESIGN.md §2.6.1–§2.6.4).
 
-Both decaps and the PAD are on the Top side. One via pair = PWR via + GND via at pitch s_v.
+Both decaps and the PAD are on the Top side. One via pair = PWR via + GND via at pitch s_v. A decap via set has
+``vias_per_pad`` vias on each of the two decap pads, i.e. that many PWR/GND pairs in parallel.
 Default model ``pair``: image partial-inductance pair of length h_near (to the component-side face
 of the nearer plane) plus a coaxial anti-pad segment through the nearer plane's thickness.
 """
@@ -44,8 +45,8 @@ class ViaSettings:
     drill_diameter_m: float
     antipad_diameter_m: float
     via_pitch_m: float = 1.0e-3  # s_v, PWR–GND via centre spacing
-    vias_per_decap: int = 2
-    pad_via_count: int = 1
+    vias_per_pad: int = 1  # n_pad: parallel vias on EACH decap pad (n PWR + n GND vias per set)
+    pad_via_count: int = 1  # PWR/GND via pairs at the observation PAD
     model: Literal["pair", "goldfarb_pucel", "coax"] = "pair"
     plating_thickness_m: float = 25e-6
     conductivity: float = 5.8e7
@@ -53,8 +54,8 @@ class ViaSettings:
 
     @property
     def n_pair_dec(self) -> int:
-        """Via pairs per decap via set = vias_per_decap/2 (§2.6.4)."""
-        return int(self.vias_per_decap) // 2
+        """PWR/GND via pairs of one decap via set = vias per decap pad (§2.6.4)."""
+        return int(self.vias_per_pad)
 
     @property
     def n_pad(self) -> int:
@@ -94,10 +95,9 @@ def validate_via_settings(vs: ViaSettings, issues: IssueCollector,
         issues.warning("W_VIA_PITCH_SMALL",
                        f"Via pitch {vs.via_pitch_m * 1e3:g} mm is smaller than (drill + anti-pad)/2; "
                        "the GND via cuts into the PWR via's anti-pad.", source)
-    if int(vs.vias_per_decap) != vs.vias_per_decap or vs.vias_per_decap < 2 \
-            or int(vs.vias_per_decap) % 2:
+    if int(vs.vias_per_pad) != vs.vias_per_pad or vs.vias_per_pad < 1:
         issues.error("E_VIA_COUNT",
-                     f"Vias per decap must be an even number ≥ 2 (got {vs.vias_per_decap}).", source)
+                     f"Vias per decap pad must be an integer ≥ 1 (got {vs.vias_per_pad}).", source)
     if int(vs.pad_via_count) != vs.pad_via_count or vs.pad_via_count < 1:
         issues.error("E_VIA_COUNT", f"PAD via count must be ≥ 1 (got {vs.pad_via_count}).", source)
     if vs.model not in ("pair", "goldfarb_pucel", "coax"):
@@ -204,7 +204,7 @@ def via_pair_impedance(f_hz: np.ndarray, stackup: Stackup, pwr_layer: int, gnd_l
 
 def decap_via_impedance(f_hz, stackup, pwr_layer, gnd_layer, vs: ViaSettings,
                         issues: IssueCollector | None = None) -> np.ndarray:
-    """Z_via,dec = Z_viapair / (vias_per_decap/2) (§2.6.4)."""
+    """Z_via,dec = Z_viapair / n_pad, n_pad = vias per decap pad (§2.6.4)."""
     _check_counts(vs)
     return via_pair_impedance(f_hz, stackup, pwr_layer, gnd_layer, vs, issues) / vs.n_pair_dec
 

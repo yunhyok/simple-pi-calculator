@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt  # noqa: E402
 
 from simple_pi_calculator.constants import MARKER_FREQUENCIES_HZ  # noqa: E402
 from simple_pi_calculator.errors import Issue, Severity  # noqa: E402
-from simple_pi_calculator.gui.engine_bridge import EngineBridge  # noqa: E402
+from simple_pi_calculator.gui.engine_bridge import EngineBridge, cluster_port_width  # noqa: E402
 from simple_pi_calculator.gui.help_window import HELP_PAGES, HelpWindow  # noqa: E402
 from simple_pi_calculator.gui.main_window import OVERVIEW_TAB, MainWindow  # noqa: E402
 from simple_pi_calculator.gui.models import DecapTableModel, PwrTableModel  # noqa: E402
@@ -553,11 +553,34 @@ def test_remove_without_selection_is_not_an_edit(make_window):
     assert w.decap_model.rowCount() == 3 and w.isWindowModified()
 
 
-def test_odd_vias_per_decap_is_rounded_and_shown(make_window):
+def test_vias_per_decap_pad_spin_box(make_window):
     w = make_window()
-    w.via_panel.vias_per_decap.setValue(3)
-    assert w.project.vias.vias_per_decap == 4
-    assert w.via_panel.vias_per_decap.value() == 4
+    panel = w.via_panel
+    assert panel.vias_per_pad.value() == 1 and panel.vias_per_pad.minimum() == 1
+    panel.vias_per_pad.setValue(3)  # odd counts are valid: 3 vias on each pad
+    assert w.project.vias.vias_per_pad == 3 and panel.vias_per_pad.value() == 3
+    form = panel.form
+    assert form.labelForField(panel.vias_per_pad).text() == "Vias per decap pad"
+    assert form.labelForField(panel.pad_vias).text() == "PAD vias (observation pad)"
+    assert "EACH" in panel.vias_per_pad.toolTip() and "observation" in panel.pad_vias.toolTip()
+    _, w_dec = w.bridge.port_widths_m(w.project)
+    assert w_dec == pytest.approx(cluster_port_width(3, 0.2e-3, 1.0e-3), rel=1e-12)
+
+
+def test_run_commits_typed_via_count(make_window, qtbot):
+    """A count typed into a spin box with keyboard tracking off is committed by Run."""
+    w = make_window(engine=FakeBridge())
+    w.open_project(str(EXAMPLE))
+    w.input_tabs.setCurrentIndex(1)
+    spin = w.via_panel.vias_per_pad
+    spin.setFocus()
+    qtbot.waitUntil(spin.hasFocus, timeout=2000)
+    spin.lineEdit().selectAll()
+    qtbot.keyClicks(spin.lineEdit(), "4")
+    assert w.project.vias.vias_per_pad == 1  # not yet committed (no Enter, no focus change)
+    w.act_run.trigger()
+    assert w.project.vias.vias_per_pad == 4
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=10000)
 
 
 def test_edit_during_compute_marks_results_stale(make_window, qtbot):
@@ -599,3 +622,119 @@ def test_self_test_report_file(tmp_path):
     assert text.rstrip().endswith("SELF-TEST OK")
     assert "help pages checked" in text and "VDD_IO: |Z|" in text
     assert not (tmp_path / "ad").exists()
+
+
+# ---------------------------------------------------------------------------------------------
+# Dummy Cap / count edits reach the computation (user report: "2× count + Dummy Cap gives the
+# same result as the original rows")
+# ---------------------------------------------------------------------------------------------
+def _run_and_wait(w: MainWindow, qtbot) -> None:
+    with qtbot.waitSignal(w.computeFinished, timeout=120000):
+        assert w.start_compute()
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=10000)
+
+
+def _core_markers_mohm(w: MainWindow) -> np.ndarray:
+    res = {r.name: r for r in w.results}["VDD_CORE"]
+    return np.abs(res.marker_z) * 1e3
+
+
+@pytest.mark.skipif(not ENGINE_AVAILABLE, reason="core.engine not available")
+def test_doubled_count_with_dummy_cap_changes_results(make_window, qtbot):
+    """User flow through the table models: example → count ×2 → Dummy Cap on → Run."""
+    w = make_window()
+    w.open_project(str(EXAMPLE))
+    _run_and_wait(w, qtbot)
+    base = _core_markers_mohm(w)
+    base_curve = np.array(w.plots["VDD_CORE"].curve("VDD_CORE").yData, dtype=float)
+
+    w.decap_panel.set_filter("VDD_CORE")
+    proxy = w.decap_panel.proxy
+    assert proxy.rowCount() == 2
+    for prow in range(proxy.rowCount()):
+        count_idx = proxy.index(prow, DecapTableModel.COL_COUNT)
+        n = int(proxy.data(count_idx, Qt.ItemDataRole.EditRole))
+        assert proxy.setData(count_idx, 2 * n, Qt.ItemDataRole.EditRole)
+        dummy_idx = proxy.index(prow, DecapTableModel.COL_DUMMY)
+        assert proxy.setData(dummy_idx, Qt.CheckState.Checked.value,
+                             Qt.ItemDataRole.CheckStateRole)
+    assert [(r.count, r.dummy) for r in w.project.decap_rows if r.pwr_name == "VDD_CORE"] \
+        == [(20, True), (8, True)]
+    assert w.stale  # edits mark the previous results stale
+
+    _run_and_wait(w, qtbot)
+    assert not w.stale
+    doubled = _core_markers_mohm(w)
+    curve = np.array(w.plots["VDD_CORE"].curve("VDD_CORE").yData, dtype=float)
+    assert not np.allclose(curve, base_curve, rtol=1e-3)
+    assert np.all(np.abs(doubled / base - 1.0) > 0.05)
+    # engine reference values (VDD_CORE, 1/10/100 MHz)
+    assert doubled == pytest.approx([2.306, 18.13, 129.0], rel=2e-3)
+    assert w.readout_values()[0] == pytest.approx(list(doubled), rel=1e-9)
+
+
+@pytest.mark.skipif(not ENGINE_AVAILABLE, reason="core.engine not available")
+def test_run_commits_open_cell_editor(make_window, qtbot):
+    """Root cause of the report: a count typed into the cell editor was ignored by Run (F5 /
+    toolbar do not take the focus, so the editor never committed)."""
+    captured = []
+    w = make_window()
+    real = w.bridge.make_inputs
+
+    def spy(project, path):
+        inputs = real(project, path)
+        captured.append([(r.count, r.dummy) for r in inputs.decap_rows])
+        return inputs
+
+    w.bridge.make_inputs = spy
+    w.open_project(str(EXAMPLE))
+    w.input_tabs.setCurrentIndex(3)
+    view, proxy = w.decap_panel.table, w.decap_panel.proxy
+    idx = proxy.mapFromSource(w.decap_model.index(0, DecapTableModel.COL_COUNT))
+    view.setCurrentIndex(idx)
+    view.edit(idx)
+    editor = view.indexWidget(idx)
+    assert editor is not None and view.state() == view.State.EditingState
+    editor.lineEdit().selectAll()
+    qtbot.keyClicks(editor.lineEdit(), "20")
+    assert w.project.decap_rows[0].count == 10  # still only in the editor
+    w.act_run.trigger()
+    assert w.project.decap_rows[0].count == 20
+    assert captured and captured[-1][0] == (20, False)
+    assert view.state() != view.State.EditingState
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=120000)
+
+
+def test_checkbox_cell_toggles_once_per_click_or_double_click(make_window, qtbot):
+    """A click anywhere in the Dummy Cap cell toggles; a double click toggles exactly once
+    (Qt's default toggled twice, leaving the state unchanged)."""
+    w = make_window(engine=FakeBridge())
+    w.open_project(str(EXAMPLE))
+    w.input_tabs.setCurrentIndex(3)
+    view, proxy = w.decap_panel.table, w.decap_panel.proxy
+    idx = proxy.mapFromSource(w.decap_model.index(0, DecapTableModel.COL_DUMMY))
+    view.scrollTo(idx)
+    rect = view.visualRect(idx)
+    point = rect.center()
+    assert not w.project.decap_rows[0].dummy
+    assert point.x() - rect.left() > 30  # centre of the cell, well away from the indicator
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    assert w.project.decap_rows[0].dummy
+    from PySide6.QtWidgets import QApplication
+    qtbot.wait(QApplication.doubleClickInterval() + 100)
+    # real double click: press, release, double-click, release → exactly one toggle
+    vp, left = view.viewport(), Qt.MouseButton.LeftButton
+    qtbot.mousePress(vp, left, pos=point)
+    qtbot.mouseRelease(vp, left, pos=point)
+    qtbot.mouseDClick(vp, left, pos=point)
+    qtbot.mouseRelease(vp, left, pos=point)
+    assert not w.project.decap_rows[0].dummy
+    qtbot.wait(QApplication.doubleClickInterval() + 100)
+    # a synthetic double click whose first click never reached the cell still toggles once
+    qtbot.mouseDClick(vp, left, pos=point)
+    assert w.project.decap_rows[0].dummy
+    qtbot.wait(QApplication.doubleClickInterval() + 100)
+    view.setCurrentIndex(idx)
+    qtbot.keyClick(view, Qt.Key.Key_Space)
+    assert not w.project.decap_rows[0].dummy
+    assert w.isWindowModified()

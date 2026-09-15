@@ -232,7 +232,7 @@ def geometry_summary(project: "Project | None", pwr_name: str) -> list[str]:
     if vias is not None:
         lines.append(f"  Vias: drill {vias.drill_diameter_mm:g} mm, antipad "
                      f"{vias.antipad_diameter_mm:g} mm, pitch {vias.via_pitch_mm:g} mm, "
-                     f"{vias.vias_per_decap} per decap, {vias.pad_via_count} at PAD")
+                     f"{vias.vias_per_pad} per decap pad, {vias.pad_via_count} PAD via pair(s)")
     return lines
 
 

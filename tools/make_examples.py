@@ -121,6 +121,8 @@ def example_project(folder: str) -> Project:
     """The §4.7 example project with absolute in-memory paths under ``folder``."""
     folder = os.path.abspath(folder)
     project = Project()
+    project.vias.vias_per_pad = 1  # one PWR via on the PWR pad + one GND via on the GND pad
+    project.vias.pad_via_count = 1  # one PWR/GND via pair at the observation PAD
     project.stackup_source_path = os.path.join(folder, "stackup_6L.xlsx")
     project.layers = [LayerRow(number=n, name=name, thickness_mm=t, conductivity_s_per_m=sigma,
                                dk=dk, df=df) for n, name, t, sigma, dk, df in STACKUP_ROWS]
