@@ -35,8 +35,10 @@ from simple_pi_calculator.constants import (
     DEFAULT_VIA_MODEL,
     DEFAULT_VIA_PITCH_MM,
     DEFAULT_VIAS_PER_DECAP,
+    DEFAULT_WORKERS,
     DEFAULT_Z_UNIT,
     MAX_RECENT_FILES,
+    MAX_WORKERS,
     PROJECT_FORMAT,
     PROJECT_SUFFIX,
     QUARANTINE_KEEP,
@@ -80,6 +82,7 @@ class AdvancedSettings:
     mounting_inductance_nh: float = DEFAULT_MOUNTING_INDUCTANCE_NH
     s2p_default_mode: str = DEFAULT_S2P_MODE
     model_search_dir: str | None = None
+    workers: int = DEFAULT_WORKERS  #: compute worker threads, 0 = auto (§3.9)
 
 
 @dataclass
@@ -292,7 +295,8 @@ def project_to_dict(project: Project, anchor_dir: str | None,
                      "via_conductivity_s_per_m": float(a.via_conductivity_s_per_m),
                      "mounting_inductance_nh": float(a.mounting_inductance_nh),
                      "s2p_default_mode": a.s2p_default_mode,
-                     "model_search_dir": _path_out(a.model_search_dir, anchor_dir)},
+                     "model_search_dir": _path_out(a.model_search_dir, anchor_dir),
+                     "workers": int(a.workers)},
         "pwr": {"source_path": _path_out(project.pwr_source_path, anchor_dir),
                 "rows": [{"name": r.name, "pwr_layer": int(r.pwr_layer),
                           "gnd_layer": int(r.gnd_layer), "width_mm": float(r.width_mm),
@@ -320,6 +324,16 @@ def project_to_dict(project: Project, anchor_dir: str | None,
 # =============================================================================================
 _MISSING = object()
 
+
+def _workers_in(rd: Any, ad: dict) -> int:
+    """``advanced.workers`` (optional, default 0 = auto); out of range → default + warning."""
+    value = rd.integer(ad, "workers", "advanced.", DEFAULT_WORKERS)
+    if not (0 <= value <= MAX_WORKERS):
+        rd.issues.warning("W_PROJECT_VALUE", f"'advanced.workers' = {value} is outside "
+                          f"0…{MAX_WORKERS}; 0 (auto) used.", None, "advanced.workers")
+        return DEFAULT_WORKERS
+    return value
+
 _TOP_KEYS = {"format", "schema_version", "app_version", "stackup", "vias", "advanced", "pwr",
              "decaps", "sweep", "display", "session"}
 _SECTION_KEYS = {
@@ -327,7 +341,7 @@ _SECTION_KEYS = {
     "vias": {"drill_diameter_mm", "antipad_diameter_mm", "via_pitch_mm", "vias_per_decap",
              "pad_via_count"},
     "advanced": {"via_model", "plating_thickness_mm", "via_conductivity_s_per_m",
-                 "mounting_inductance_nh", "s2p_default_mode", "model_search_dir"},
+                 "mounting_inductance_nh", "s2p_default_mode", "model_search_dir", "workers"},
     "pwr": {"source_path", "rows"},
     "decaps": {"source_path", "rows"},
     "sweep": {"f_start_hz", "f_stop_hz", "n_points", "show_plane_only"},
@@ -544,7 +558,8 @@ def project_from_dict(doc: dict, anchor_dir: str | None,
                                          DEFAULT_MOUNTING_INDUCTANCE_NH),
         s2p_default_mode=rd.enum(ad, "s2p_default_mode", "advanced.", S2P_MODES,
                                  DEFAULT_S2P_MODE) or DEFAULT_S2P_MODE,
-        model_search_dir=search_dir)
+        model_search_dir=search_dir,
+        workers=_workers_in(rd, ad))
 
     # pwr
     pw = rd.section(doc, "pwr")
@@ -734,6 +749,7 @@ def to_inputs(project: Project, project_path: str | None) -> Any:
         project_dir=os.path.dirname(os.path.abspath(project_path)) if project_path else None,
         model_search_dir=a.model_search_dir,
         s2p_default_mode=a.s2p_default_mode,
+        workers=int(getattr(a, "workers", 0) or 0),
         decap_source_dir=(os.path.dirname(project.decap_source_path)
                           if project.decap_source_path and os.path.isabs(project.decap_source_path)
                           else None),

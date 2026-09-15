@@ -116,6 +116,7 @@ filled row by row. Port widths for drill 0.2 mm and pitch 1.0 mm: 1 pair 0.224 m
 <tr><td>Mounting inductance per capacitor (nH)</td><td>0</td><td>Pad, escape trace and solder inductance of <b>one</b> capacitor, added in series with each capacitor model (not with the via). Typical 0.2–0.6 nH for 0402/0603; 0 is optimistic unless the model already contains it.</td></tr>
 <tr><td>S2P default mode</td><td>series</td><td>How <code>.s2p</code> files are converted when a decap row has no S2P Mode: series-through or shunt-through (see <a href="touchstone.html">Touchstone</a>).</td></tr>
 <tr><td>Model search folder</td><td>(none)</td><td>Additional folder searched for decap model files given with a relative path (see <a href="input_decaps.html#paths">path resolution</a>).</td></tr>
+<tr><td>Worker threads</td><td>Auto</td><td>Number of threads used by the computation. <b>Auto</b> (0) uses all logical CPUs; PWR nets and frequency blocks are computed in parallel. Lower it to keep the PC responsive for other work. The setting never changes the results.</td></tr>
 </table>
 
 <h3>Resistance</h3>

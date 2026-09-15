@@ -10,9 +10,11 @@ from typing import Callable, Sequence
 import numpy as np
 
 from simple_pi_calculator.constants import RCOND_MIN, SCHUR_CHUNK_BYTES
-from simple_pi_calculator.core.cavity import (CancelledError, CavityModel, ModeSettings,
-                                              cluster_port_width)
-from simple_pi_calculator.core.decap_model import DecapModel
+from simple_pi_calculator.core.cavity import (CancelledError, CavityCache, CavityModel,
+                                              ModeSettings, cavity_cache_key, cluster_port_width)
+from simple_pi_calculator.core.decap_model import DecapModel, evaluate_impedance
+from simple_pi_calculator.core.parallel import (CHUNK_TARGET_BYTES, blas_limited, plan_chunks,
+                                                resolve_workers, run_chunks)
 from simple_pi_calculator.core.placement import DecapGroupGeom, Placement, place_ports
 from simple_pi_calculator.core.stackup import Stackup, derive_plane_pair
 from simple_pi_calculator.core.via import (ViaSettings, _pair_impedance_geom, loop_inductance,
@@ -92,9 +94,48 @@ def port_loads(f_hz: np.ndarray, placement: Placement, groups: Sequence[DecapGro
     return zcap[:, k] / caps[None, :] + zv[:, None]
 
 
+def _reduce_chunk(z_cav: np.ndarray, z_load: np.ndarray, s: int, e: int, check: bool
+                  ) -> tuple[np.ndarray, np.ndarray, SingularReductionError | None]:
+    """Schur reduction of frequencies s:e (§3.6); singular pivots are returned, not raised."""
+    K = z_cav.shape[1] - 1
+    diag = np.arange(K)
+    a = z_cav[s:e, 1:, 1:].copy()
+    a[:, diag, diag] += z_load[s:e]
+    rhs = z_cav[s:e, 1:, 0:1]
+    try:
+        u = np.linalg.solve(a, rhs)[..., 0]
+    except np.linalg.LinAlgError:
+        bad = s
+        for i in range(s, e):
+            try:
+                np.linalg.solve(a[i - s], rhs[i - s])
+            except np.linalg.LinAlgError:
+                bad = i
+                break
+        return (np.empty(0, dtype=complex), np.empty(0),
+                SingularReductionError("singular port-reduction matrix", bad, 0.0))
+    z_red = z_cav[s:e, 0, 0] - np.sum(z_cav[s:e, 0, 1:] * u, axis=-1)
+    if check:
+        with np.errstate(all="ignore"):
+            if np.all(np.isfinite(a)):
+                sv = np.linalg.svd(a, compute_uv=False)
+                rc = sv[:, -1] / sv[:, 0]
+                rc = np.where(np.isfinite(rc), rc, 0.0)
+            else:
+                rc = np.zeros(e - s)
+    else:
+        rc = np.ones(e - s)
+    return z_red, rc, None
+
+
 def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
-            cancel: Callable[[], bool] | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """Z_red and per-frequency rcond (1.0 when there are no decap ports)."""
+            cancel: Callable[[], bool] | None = None, workers: int = 1,
+            progress: Callable[[float], None] | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Z_red and per-frequency rcond (1.0 when there are no decap ports).
+
+    Frequency chunks run on ``workers`` threads (§3.9); results and error reporting (first
+    offending frequency) are independent of ``workers``.
+    """
     z_cav = np.asarray(z_cav, dtype=complex)
     z_load = np.asarray(z_load, dtype=complex)
     F = z_cav.shape[0]
@@ -102,38 +143,24 @@ def _reduce(z_cav: np.ndarray, z_load: np.ndarray, check: bool = True,
     z00 = z_cav[:, 0, 0].copy()
     if K == 0:
         return z00, np.ones(F)
-    rcond = np.ones(F)
-    z_red = np.empty(F, dtype=complex)
-    chunk = max(1, min(F, SCHUR_CHUNK_BYTES // max(1, 16 * K * K * 3)))
-    diag = np.arange(K)
-    for s in range(0, F, chunk):
-        if cancel is not None and cancel():
-            raise CancelledError("computation cancelled")
-        e = min(F, s + chunk)
-        a = z_cav[s:e, 1:, 1:].copy()
-        a[:, diag, diag] += z_load[s:e]
-        rhs = z_cav[s:e, 1:, 0:1]
-        try:
-            u = np.linalg.solve(a, rhs)[..., 0]
-        except np.linalg.LinAlgError:
-            bad = s
-            for i in range(s, e):
-                try:
-                    np.linalg.solve(a[i - s], rhs[i - s])
-                except np.linalg.LinAlgError:
-                    bad = i
-                    break
-            raise SingularReductionError("singular port-reduction matrix", bad, 0.0) from None
-        z_red[s:e] = z00[s:e] - np.sum(z_cav[s:e, 0, 1:] * u, axis=-1)
-        if check:
-            with np.errstate(all="ignore"):
-                if np.all(np.isfinite(a)):
-                    sv = np.linalg.svd(a, compute_uv=False)
-                    rc = sv[:, -1] / sv[:, 0]
-                    rc = np.where(np.isfinite(rc), rc, 0.0)
-                else:
-                    rc = np.zeros(e - s)
-            rcond[s:e] = rc
+    # working set ≈ 3 (K×K) complex copies per frequency (chunks sized by memory, not flops:
+    # very small chunks lose the parallel gain to GIL hand-offs between the numpy calls)
+    per_f = 48.0 * K * K
+    chunks = plan_chunks(F, per_f, workers,
+                         target_bytes=min(SCHUR_CHUNK_BYTES, CHUNK_TARGET_BYTES))
+
+    def done(i: int, n: int) -> None:
+        if progress is not None:
+            progress(i / n)
+
+    parts = run_chunks(lambda sl: _reduce_chunk(z_cav, z_load, sl.start, sl.stop, check),
+                       chunks, workers, cancel=cancel, on_done=done,
+                       cancelled_exc=CancelledError)
+    errors = [err for _, _, err in parts if err is not None]
+    if errors:
+        raise min(errors, key=lambda err: err.index)
+    z_red = np.concatenate([zr for zr, _, _ in parts])
+    rcond = np.concatenate([rc for _, rc, _ in parts])
     if check:
         nonfinite = ~np.isfinite(z_red)
         bad = nonfinite | (rcond < RCOND_MIN)
@@ -186,15 +213,41 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
                 want_plane_only: bool, issues: IssueCollector,
                 progress: Callable[[float], None] | None = None,
                 cancel: Callable[[], bool] | None = None,
-                settings: ModeSettings = ModeSettings()) -> PwrResult:
+                settings: ModeSettings = ModeSettings(),
+                workers: int | None = 1,
+                cavity_cache: CavityCache | None = None) -> PwrResult:
     """Z at the PAD of one PWR net (§2.8). Errors are added to ``issues`` and raised as
-    :class:`InputError`; cancellation raises :class:`CancelledError`."""
+    :class:`InputError`; cancellation raises :class:`CancelledError`.
+
+    ``workers`` threads evaluate frequency chunks (0 / None = auto, §3.9); ``cavity_cache``
+    memoises the cavity Z-matrix across calls. Neither changes the result.
+    """
+    with blas_limited(1):
+        return _compute_pwr(stackup, pwr, groups, vias, f_grid_hz, marker_f_hz, want_plane_only,
+                            issues, progress, cancel, settings, resolve_workers(workers),
+                            cavity_cache)
+
+
+#: progress fractions of the stages of :func:`compute_pwr` (start of each stage)
+STAGE_DECAPS, STAGE_STATIC, STAGE_DYNAMIC, STAGE_REDUCE = 0.0, 0.05, 0.20, 0.55
+
+
+def _compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
+                 vias: ViaSettings, f_grid_hz: np.ndarray, marker_f_hz: Sequence[float],
+                 want_plane_only: bool, issues: IssueCollector,
+                 progress: Callable[[float], None] | None,
+                 cancel: Callable[[], bool] | None,
+                 settings: ModeSettings, workers: int,
+                 cavity_cache: CavityCache | None) -> PwrResult:
     source = f"PWR:{pwr.name}"
     n_before = len(issues.issues)
+    last = [0.0]
 
     def report(frac: float) -> None:
         if progress is not None:
-            progress(min(1.0, max(0.0, frac)))
+            frac = min(1.0, max(last[0], frac))
+            last[0] = frac
+            progress(frac)
 
     def check_cancel() -> None:
         if cancel is not None and cancel():
@@ -214,7 +267,7 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     f_eval, grid_idx, marker_f, marker_idx = evaluation_frequencies(f_grid_hz, marker_f_hz)
     grid = f_eval[grid_idx]
 
-    # 2. decap models (distinct models evaluated once)
+    # 2. decap models (distinct models evaluated once; memoised per model and sweep, §3.9)
     groups = list(groups)
     z_cache: dict[int, np.ndarray] = {}
     z_decap: list[np.ndarray] = []
@@ -222,19 +275,15 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         check_cancel()
         key = id(g.model)
         if key not in z_cache:
-            try:
-                z = g.model.impedance(f_eval, issues)  # type: ignore[call-arg]
-            except TypeError:
-                z = g.model.impedance(f_eval)
-            z = np.asarray(z, dtype=complex)
+            z = np.asarray(evaluate_impedance(g.model, f_eval, issues), dtype=complex)
             if z.shape != f_eval.shape or not np.all(np.isfinite(z)):
                 err = issues.error("E_SINGULAR", f"Decap model {getattr(g.model, 'label', '?')} "
                                    "returned non-finite impedance values.", source)
                 raise InputError([err])
             z_cache[key] = z
         z_decap.append(z_cache[key])
-        report(0.10 * (gi + 1) / len(groups))
-    report(0.10)
+        report(STAGE_STATIC * (gi + 1) / len(groups))
+    report(STAGE_STATIC)
 
     # 3. placement
     if not groups:
@@ -246,14 +295,33 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     a, b = placement.width_m, placement.height_m
     c_plane = pair.plane_capacitance(a, b)
 
-    # 4. cavity
-    cav = CavityModel(a, b, pair, placement.xy_m, placement.port_widths_m, f_eval, settings,
-                      progress=lambda x: report(0.10 + 0.60 * x), cancel=cancel)
-    if cav.capped:
+    # 4. cavity (Z-matrix cache keyed by geometry, plane pair, ports, sweep and mode settings)
+    ckey = None
+    cached = None
+    if cavity_cache is not None:
+        ckey = cavity_cache_key(a, b, pair, placement.xy_m, placement.port_widths_m, f_eval,
+                                settings)
+        cached = cavity_cache.get(ckey)
+    if cached is not None:
+        z_cav, meta = cached
+        check_cancel()
+    else:
+        cav = CavityModel(a, b, pair, placement.xy_m, placement.port_widths_m, f_eval, settings,
+                          progress=lambda x: report(STAGE_STATIC
+                                                    + (STAGE_DYNAMIC - STAGE_STATIC) * x),
+                          cancel=cancel)
+        z_cav = cav.z_matrix(f_eval, workers=workers,
+                             progress=lambda x: report(STAGE_DYNAMIC
+                                                       + (STAGE_REDUCE - STAGE_DYNAMIC) * x),
+                             cancel=cancel)
+        meta = {"M": cav.M, "N": cav.N, "capped": cav.capped, "n_dynamic": cav.n_dynamic}
+        if cavity_cache is not None and ckey is not None:
+            cavity_cache.put(ckey, z_cav, meta)
+    report(STAGE_REDUCE)
+    if meta["capped"]:
         issues.warning("W_MODES_CAPPED", f"Mode count capped at {settings.max_modes_per_axis} per "
-                       f"axis (M = {cav.M}, N = {cav.N}); spreading inductance slightly "
+                       f"axis (M = {meta['M']}, N = {meta['N']}); spreading inductance slightly "
                        "under-resolved.", source)
-    z_cav = cav.z_matrix(f_eval, progress=lambda x: report(0.70 + 0.25 * x), cancel=cancel)
 
     # 5. vias
     geom = via_geometry(stackup, pwr.pwr_layer, pwr.gnd_layer, issues, source)
@@ -266,7 +334,9 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
     check_cancel()
     z_load = port_loads(f_eval, placement, groups, z_decap, z_via_dec, vias.mounting_inductance_h)
     try:
-        z_red, rcond = _reduce(z_cav, z_load, check=True, cancel=cancel)
+        z_red, rcond = _reduce(z_cav, z_load, check=True, cancel=cancel, workers=workers,
+                               progress=lambda x: report(STAGE_REDUCE
+                                                         + (1.0 - STAGE_REDUCE) * 0.999 * x))
     except SingularReductionError as exc:
         f_bad = f_eval[min(exc.index, f_eval.size - 1)]
         err = issues.error(
@@ -289,9 +359,9 @@ def compute_pwr(stackup: Stackup, pwr: PwrSpec, groups: Sequence[DecapGroup],
         "W_m": a,
         "H_m": b,
         "D_ref_m": placement.d_ref_m,
-        "M": cav.M,
-        "N": cav.N,
-        "n_dynamic": cav.n_dynamic,
+        "M": meta["M"],
+        "N": meta["N"],
+        "n_dynamic": meta["n_dynamic"],
         "P": placement.n_ports,
         "h_near_m": geom.h_near_m,
         "h_r_m": geom.h_r_m,

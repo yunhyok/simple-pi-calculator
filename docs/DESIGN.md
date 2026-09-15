@@ -789,6 +789,9 @@ Let P = 1 + K ports, L = |𝓛|, F = number of frequencies.
 | Schur reduce | F·K³/3 | 400·4.2e4 ≈ 2e7, trivial |
 | Decap MNA | F·n³/3 per distinct model | trivial (n < 50) |
 
+The costs above describe the v0.1.0 loop of §3.3; the evaluation actually used (grouped static sums,
+threaded frequency chunks) and measured timings are in §3.9.
+
 Memory: U_L ≤ P·L·8 bytes; batched Schur (F, K, K) complex ≤ 400·2500·16 = 16 MB. Decap impedances
 are computed once per **distinct** (file, subckt, s2p mode) and reused.
 
@@ -833,6 +836,82 @@ Outside:
   Im Z_1 < 0; else hold Z_1 constant. Emit `W_S2P_EXTRAP_LOW`.
 * f > f_last: fit Z ≈ R_x + jωL_x to the last point: L_x = Im Z_n / ω_n if Im Z_n > 0; else hold
   constant. Emit `W_S2P_EXTRAP_HIGH`.
+
+### 3.9 Performance architecture
+
+The numerics of §3.1–§3.8 are unchanged; this section fixes *how* they are evaluated. All paths are
+Qt-free and use numpy only (`threadpoolctl` is used when importable, never required).
+
+**Static sums, grouped by distinct port factors** (`cavity._static_sums`). Write
+S_ij = Σ_m X_im X_jm C_ij,m with C_ij,m = Σ_n Y_in Y_jn W_mn, where W0 = 1/k_mn² on 𝓗 (else 0) and
+W1 = W0² are built once as (M+1)×(N+1) arrays (≤ 18 MB each at the 1500-mode cap). All ports of a
+decap (sub-)row have bit-identical Y rows (same y, same width), so the n-sum is needed only for pairs
+of **distinct** rows: for each distinct row r, `B = Ŷ_r ∘ Ŷ_{s≥r}` and `C = B·Wᵀ` (one GEMM), then
+the (P_r × P_{s≥r}) block `X_I·(X_J ∘ C)ᵀ` (one GEMM), mirrored for symmetry. Cost
+R²/2·(M+1)(N+1) + P²(M+1) instead of 2·P²·(M+1)(N+1) (R = distinct rows; the axis with fewer
+distinct rows is chosen). Exactly the same terms are summed; only the grouping (rounding ≈ 1e-16
+relative) differs. The worst case (every port on its own row) costs no more than the §3.3 loop and
+needs only O(R·(M+N) + P·M) extra memory.
+
+**Dynamic sum and Z assembly** (`CavityModel.z_matrix_into`). The (L, P²) real table
+T_l = u_l u_lᵀ is built once (≤ 64 MB, otherwise a per-frequency row product is used); per frequency
+chunk `Re dyn = Re g · T`, `Im dyn = Im g · T` are two real GEMMs with g = 1/(κ_L − k²). Then
+D = dyn + S0 + k²S1 and Z = pref·D are formed with the explicit real/imaginary formulas of complex
+multiplication, in place, per chunk (no F×P×P temporaries).
+
+**Frequency chunks and worker threads** (`core/parallel.py`). Z(ω) and the Schur reduction (§3.6:
+batched `solve` + batched `svd` for rcond) are split into contiguous frequency chunks of ≈ 8 MB
+working set (at least 2·workers chunks when the work exceeds 2 MB) and run on a private
+`ThreadPoolExecutor`; numpy releases the GIL inside LAPACK/BLAS and ufunc loops. Very small chunks
+are avoided (they lose the gain to GIL hand-offs between numpy calls). Each chunk performs exactly
+the per-frequency arithmetic of the serial code, so results do not depend on the worker count
+(tested ≤ 1e-12, in practice bit-identical). The first offending frequency of `E_SINGULAR` is the
+lowest index over all chunks, as in the serial loop.
+
+**PWR nets in parallel** (`engine.compute_project`). With `workers` threads and n nets,
+min(workers, n) nets run concurrently, each with ⌊workers / that⌋ chunk threads. Per-net error
+isolation, result order (PWR table order) and issue order are identical to the serial run. Progress
+is the mean of the per-net fractions (non-decreasing, emitted under a lock); cancel is polled by
+every chunk and net task, and any cancellation stops the other tasks before `CancelledError` is
+raised. `advanced.workers` (§4.7, GUI Vias → Advanced → Worker threads): 0 = auto =
+`os.cpu_count()`.
+
+**Threads vs processes** (measured with `tools/bench.py --compare-executors`, 2-core Xeon, numpy 2.4
+/ OpenBLAS 0.3.31): six nets — threads 0.106 s, spawn process pool 0.283 s cold (interpreter + numpy
+import per process) and 0.078 s with an already warm pool; one large net — threads 0.68 s, processes
+1.07 s. Processes only win when a pool is kept alive across runs, would need picklable
+progress/cancel channels and a frozen-exe bootstrap, and duplicate the caches. **Threads are used.**
+(`app.main` still calls `multiprocessing.freeze_support()` so a future process pool is safe in the
+PyInstaller build.)
+
+**BLAS thread policy.** The hot operations are many small dense kernels, for which a multithreaded
+BLAS is slower and oversubscribes the cores (batched 120×120 complex SVD: 0.55 s with 1 BLAS thread,
+1.46 s with 2). Therefore `compute_project` / `compute_pwr` run inside `parallel.blas_limited(1)`
+(re-entrant, process-wide, via `threadpoolctl` when importable), and `app.main` sets
+`OPENBLAS_NUM_THREADS`/`OMP_NUM_THREADS`/`MKL_NUM_THREADS` to 1 before numpy is imported unless the
+user has set them (so the frozen build behaves the same without `threadpoolctl`).
+
+**Caches.**
+
+| Cache | Key | Invalidated by | Not invalidated by | Bound |
+|---|---|---|---|---|
+| Cavity Z-matrix (`cavity.CavityCache`, one per `EngineBridge`; module default for headless use) | SHA-256 of plane W×H, the `PlanePair` (layers, thicknesses, σ, Dk/Df, d, εr_eff, tanδ_eff), port xy and widths, evaluation frequencies (grid ∪ markers), `ModeSettings` | plane width, decap row count/distance/dummy/enable (placement), drill, via pitch, vias per decap, PAD via count (port widths), stack-up of the pair, sweep | decap model file/subckt/S2P mode, via model, plating, via σ, anti-pad, mounting inductance, show plane-only | 32 entries and 512 MB, LRU; stored read-only |
+| Decap model (`DecapModelCache`, existing) | abs path, mtime, size, subckt, S2P mode | file edit | — | unbounded (small) |
+| Decap impedance (memo on each cached model object) | exact evaluation frequency vector | new model object (file edit, subckt, mode), sweep | everything else | 8 sweeps per model; warnings replayed on hits |
+
+`evaluation_frequencies` (§3.1) is computed once per net; the grid ∪ marker vector is evaluated in a
+single pass. The static sums, port factors (cos/sinc tables) and T are frequency independent and
+computed once per net.
+
+**Measured** (`tools/bench.py`, best of 3, cold caches, 2 cores; "before" = v0.1.0 code):
+
+| Scenario | before | after, workers = 1 | after, auto (2) | decap-only re-run (cache) |
+|---|---|---|---|---|
+| §8 example (2 nets, P = 15/4) | 0.049–0.054 s | 0.024 s | 0.025–0.035 s | 0.012 s |
+| large MLO (P = 121, M×N = 1073×845, 400 pts) | 2.87–3.60 s | 0.82 s | 0.45 s | 0.37 s |
+| many nets (6 nets, P = 13–23) | 0.22–0.27 s | 0.14 s | 0.08–0.10 s | 0.04 s |
+
+After the restructuring the batched SVD for rcond (§3.6) dominates large nets (≈ 75 %).
 
 ---
 
@@ -1173,6 +1252,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `advanced.mounting_inductance_nh` | float ≥ 0 | default 0 (per capacitor) |
 | `advanced.s2p_default_mode` | `"series"`/`"shunt"` | default series |
 | `advanced.model_search_dir` | str or null | |
+| `advanced.workers` | int 0…256 | default 0 = auto (`os.cpu_count()`); compute worker threads (§3.9). Optional; out of range → `W_PROJECT_VALUE`, 0 used |
 | `pwr.source_path` | str or null | |
 | `pwr.rows[]` | `{name:str, pwr_layer:int, gnd_layer:int, width_mm:float, enabled:bool}` | height is never stored (derived) |
 | `decaps.source_path` | str or null | |
@@ -1219,7 +1299,8 @@ Example named project (abridged):
   "vias": {"drill_diameter_mm": 0.2, "antipad_diameter_mm": 0.5, "via_pitch_mm": 1.0,
            "vias_per_decap": 2, "pad_via_count": 1},
   "advanced": {"via_model": "pair", "plating_thickness_mm": 0.025, "via_conductivity_s_per_m": 5.8e7,
-               "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null},
+               "mounting_inductance_nh": 0.0, "s2p_default_mode": "series", "model_search_dir": null,
+               "workers": 0},
   "pwr": {"source_path": "pwr_list.xlsx", "rows": [
     {"name": "VDD_CORE", "pwr_layer": 5, "gnd_layer": 3, "width_mm": 60, "enabled": true},
     {"name": "VDD_IO", "pwr_layer": 7, "gnd_layer": 9, "width_mm": 30, "enabled": true}]},
@@ -1281,7 +1362,8 @@ simple-pi-calculator/
 │  │  ├─ __init__.py
 │  │  ├─ units.py                  mm↔m, unit display scaling
 │  │  ├─ stackup.py                Layer, Stackup, PlanePair derivation
-│  │  ├─ cavity.py                 CavityModel (modal Z matrix)
+│  │  ├─ cavity.py                 CavityModel (modal Z matrix), CavityCache
+│  │  ├─ parallel.py               worker threads, chunking, BLAS thread policy (§3.9)
 │  │  ├─ placement.py              derived plane height, axial row placement, dummy-cap ports
 │  │  ├─ via.py                    via loop impedance
 │  │  ├─ spice_expr.py             number & expression parser
@@ -1320,6 +1402,7 @@ simple-pi-calculator/
 │                                  cap_0402_100nF.mod, cap_0603_10uF.mod,
 │                                  cap_0402_100nF_series.s2p, example_project.spical.json
 ├─ tools/
+│  ├─ bench.py                     performance benchmark scenarios (§3.9)
 │  ├─ make_examples.py             regenerates example xlsx/s2p deterministically
 │  └─ render_diagrams.py           SVG → PNG using QtSvg (no extra deps)
 ├─ docs/DESIGN.md, docs/diagrams/*.svg
@@ -1736,6 +1819,9 @@ def export_xlsx(results: Sequence[PwrResult], path: str, project: Project) -> No
      `thread.finished.connect(thread.deleteLater)`; `thread.start()`.
   3. Cancel: `worker.request_cancel()` sets a `threading.Event`; engine polls it via the `cancel`
      callback and raises `CancelledError`, which the worker reports as a cancellation message.
+     Inside the worker thread the engine uses its own thread pools (§3.9); `progress` and `cancel`
+     may therefore be called from pool threads (progress calls are serialised by the engine; the
+     worker only emits queued signals).
 * Progress signal emissions are throttled to ≥ 50 ms apart. The worker never touches widgets.
 * While running: Compute action disabled, Cancel enabled, QProgressBar in the status bar.
 * On close during compute: request cancel, `thread.wait(5000)`.
@@ -2666,3 +2752,10 @@ Deviations and clarifications found while reviewing the implementation against t
    is `SimplePICalculator-Setup-<version>.exe` (README/RELEASING) rather than §7.2's
    `…-<version>-win64-setup`. The Windows workflow's test job runs on Windows only; Ubuntu tests run
    in `ci.yml`.
+10. **§3.9 performance architecture (post-v0.1.0).** Static sums grouped by distinct port-factor
+    rows, dynamic sum as real GEMMs against a (L, P²) table, frequency-chunked Z assembly and Schur
+    reduction on worker threads, PWR nets computed concurrently, BLAS pinned to one thread during a
+    computation, and cavity Z-matrix / decap impedance caches. The §3.3 loop is kept as
+    `cavity.z_matrix_reference` (tests only). Golden values are unchanged (example project:
+    max relative deviation 7.3e-11 vs `tests/data/golden_example.json`). New project key
+    `advanced.workers` (§4.7), no schema version change (optional key with default).

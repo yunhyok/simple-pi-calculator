@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from simple_pi_calculator.constants import (
     F_START_MIN_HZ,
     F_STOP_MAX_HZ,
+    MAX_WORKERS,
     N_POINTS_MAX,
     N_POINTS_MIN,
     S2P_MODES,
@@ -363,6 +364,13 @@ class ViaPanel(QWidget):
         aform.addRow("Mounting inductance per capacitor", self.mounting)
         aform.addRow("S2P default mode", self.s2p_mode)
         aform.addRow("Model search folder", search_row)
+        self.workers = QSpinBox(self._adv_body)
+        self.workers.setRange(0, MAX_WORKERS)
+        self.workers.setSpecialValueText(f"Auto ({os.cpu_count() or 1})")
+        self.workers.setKeyboardTracking(False)
+        self.workers.setToolTip("Worker threads used by the computation (0 = Auto = number of "
+                                "logical CPUs). Does not change the results.")
+        aform.addRow("Worker threads", self.workers)
         adv_layout = QVBoxLayout(self.advanced)
         adv_layout.addWidget(self._adv_body)
         self._adv_body.setVisible(False)
@@ -373,7 +381,7 @@ class ViaPanel(QWidget):
         for spin in (self.drill, self.antipad, self.pitch, self.plating, self.conductivity,
                      self.mounting):
             spin.valueChanged.connect(self._write)
-        for spin in (self.vias_per_decap, self.pad_vias):
+        for spin in (self.vias_per_decap, self.pad_vias, self.workers):
             spin.valueChanged.connect(self._write)
         self.via_model.currentIndexChanged.connect(self._write)
         self.s2p_mode.currentIndexChanged.connect(self._write)
@@ -382,7 +390,7 @@ class ViaPanel(QWidget):
     def _widgets(self) -> list[QWidget]:
         return [self.drill, self.antipad, self.pitch, self.vias_per_decap, self.pad_vias,
                 self.via_model, self.plating, self.conductivity, self.mounting, self.s2p_mode,
-                self.search_dir]
+                self.search_dir, self.workers]
 
     def load(self, project: Any) -> None:
         self._project = project
@@ -402,6 +410,7 @@ class ViaPanel(QWidget):
             j = self.s2p_mode.findData(a.s2p_default_mode)
             self.s2p_mode.setCurrentIndex(max(j, 0))
             self.search_dir.setText(a.model_search_dir or "")
+            self.workers.setValue(int(getattr(a, "workers", 0) or 0))
         finally:
             del blockers
 
@@ -425,6 +434,7 @@ class ViaPanel(QWidget):
         a.mounting_inductance_nh = float(self.mounting.value())
         a.s2p_default_mode = str(self.s2p_mode.currentData() or "series")
         a.model_search_dir = self.search_dir.text().strip() or None
+        a.workers = int(self.workers.value())
         self.edited.emit()
 
     def _browse_search_dir(self) -> None:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import threading
+from collections import OrderedDict
 from typing import Protocol, runtime_checkable
 
 import numpy as np
@@ -23,6 +26,7 @@ __all__ = [
     "SPICE_EXTENSIONS",
     "S2P_EXTENSIONS",
     "load_decap_model",
+    "evaluate_impedance",
 ]
 
 SPICE_EXTENSIONS = (".mod", ".lib", ".sp", ".cir", ".sub", ".inc")
@@ -45,6 +49,7 @@ class SpiceDecapModel:
         self.label = label or f"{base}:{netlist.subckt_name.upper()}"
         self.source = netlist.source_path
         self._system = build_mna(netlist.elements, netlist.pin1, netlist.pin2)
+        self._z_memo = _ImpedanceMemo()
 
     def impedance(self, f_hz: np.ndarray, issues: IssueCollector | None = None) -> np.ndarray:
         """Complex Z(f), shape (F,). Singular MNA → ``InputError`` with ``E_SINGULAR``."""
@@ -69,12 +74,68 @@ class S2pDecapModel:
         self.source = data.source
         self.label = label or f"{os.path.basename(data.source)} ({self.mode})"
         self.z_src = s2p_to_impedance(data, self.mode, issues)
+        self._z_memo = _ImpedanceMemo()
 
     def impedance(self, f_hz: np.ndarray, issues: IssueCollector | None = None) -> np.ndarray:
         """Complex Z(f), shape (F,). Extrapolation warnings go to ``issues`` if given."""
         sink = issues if issues is not None else IssueCollector()
         return interpolate_impedance(self.data.f_hz, self.z_src, np.asarray(f_hz, dtype=float),
                                      sink, self.source)
+
+
+class _ImpedanceMemo:
+    """Per-model memo of Z(f) keyed by the exact frequency vector (§3.9); bounded, thread-safe.
+
+    Lives on the model object, which :class:`DecapModelCache` keys by file mtime/size, subckt and
+    s2p mode — so a changed file yields a new model and a fresh memo.
+    """
+
+    MAX_ENTRIES = 8
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.data: OrderedDict[bytes, tuple[np.ndarray, list[Issue]]] = OrderedDict()
+
+
+def _freq_key(f: np.ndarray) -> bytes:
+    arr = np.ascontiguousarray(np.asarray(f, dtype=float))
+    return hashlib.sha256(repr(arr.shape).encode() + arr.tobytes()).digest()
+
+
+def evaluate_impedance(model: DecapModel, f_hz: np.ndarray,
+                       issues: IssueCollector | None = None) -> np.ndarray:
+    """``model.impedance(f)`` with memoisation for the built-in model classes (§3.9).
+
+    Warnings emitted on the first evaluation are replayed into ``issues`` on every memo hit;
+    failed evaluations are not memoised. Other model objects (tests, plug-ins) are called
+    directly, with or without the ``issues`` argument.
+    """
+    f = np.atleast_1d(np.asarray(f_hz, dtype=float))
+    memo = getattr(model, "_z_memo", None)
+    if not isinstance(memo, _ImpedanceMemo):
+        try:
+            return model.impedance(f, issues)  # type: ignore[call-arg]
+        except TypeError:
+            return model.impedance(f)
+    key = _freq_key(f)
+    with memo.lock:
+        hit = memo.data.get(key)
+        if hit is not None:
+            memo.data.move_to_end(key)
+    if hit is not None:
+        z, recorded = hit
+        if issues is not None:
+            for i in recorded:
+                issues.add(i.code, i.severity, i.message, i.source, i.location)
+        return z
+    rec = _Recorder(issues if issues is not None else IssueCollector())
+    z = np.asarray(model.impedance(f, rec), dtype=complex)  # type: ignore[arg-type]
+    z.setflags(write=False)
+    with memo.lock:
+        memo.data[key] = (z, rec.recorded)
+        while len(memo.data) > memo.MAX_ENTRIES:
+            memo.data.popitem(last=False)
+    return z
 
 
 SpiceDecap = SpiceDecapModel
@@ -139,6 +200,7 @@ class DecapModelCache:
 
     def __init__(self) -> None:
         self._cache: dict[tuple, tuple[DecapModel, list[Issue]]] = {}
+        self._lock = threading.RLock()  # PWR nets are computed concurrently (§3.9)
 
     def get(self, path: str, subckt: str | None, s2p_mode: str | None,
             issues: IssueCollector) -> DecapModel:
@@ -152,16 +214,17 @@ class DecapModelCache:
         sub_key = (subckt or "").strip().lower() if ext in SPICE_EXTENSIONS else ""
         mode_key = (s2p_mode or "").strip().lower() if ext in S2P_EXTENSIONS else ""
         key = (os.path.normcase(p), st.st_mtime_ns, st.st_size, sub_key, mode_key)
-        hit = self._cache.get(key)
-        if hit is not None:
-            model, recorded = hit
-            for i in recorded:
-                issues.add(i.code, i.severity, i.message, i.source, i.location)
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                model, recorded = hit
+                for i in recorded:
+                    issues.add(i.code, i.severity, i.message, i.source, i.location)
+                return model
+            rec = _Recorder(issues)
+            model = load_decap_model(p, subckt, s2p_mode, rec)  # type: ignore[arg-type]
+            self._cache[key] = (model, rec.recorded)
             return model
-        rec = _Recorder(issues)
-        model = load_decap_model(p, subckt, s2p_mode, rec)  # type: ignore[arg-type]
-        self._cache[key] = (model, rec.recorded)
-        return model
 
     def clear(self) -> None:
         self._cache.clear()

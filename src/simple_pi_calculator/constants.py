@@ -77,6 +77,8 @@ DEFAULT_PLATING_THICKNESS_MM: float = 0.025
 DEFAULT_VIA_CONDUCTIVITY_S_PER_M: float = SIGMA_CU
 DEFAULT_MOUNTING_INDUCTANCE_NH: float = 0.0
 DEFAULT_S2P_MODE: str = "series"
+DEFAULT_WORKERS: int = 0  #: compute worker threads, 0 = auto = os.cpu_count() (§3.9)
+MAX_WORKERS: int = 256
 S2P_MODES: tuple[str, ...] = ("series", "shunt")
 DEFAULT_Z_UNIT: str = "mohm"
 Z_UNITS: tuple[str, ...] = ("ohm", "mohm", "uohm")

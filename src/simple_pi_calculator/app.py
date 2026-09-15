@@ -240,7 +240,24 @@ def run_self_test(app, report_path: str | None = None) -> int:
     return code
 
 
+def configure_compute_threads() -> None:
+    """BLAS thread policy of the packaged app (DESIGN.md §3.9).
+
+    The engine parallelises with its own worker threads and runs many small dense operations, for
+    which a multithreaded BLAS is slower and oversubscribes the cores. When ``threadpoolctl`` is
+    not bundled the limit cannot be applied at run time, so the default is set here, before numpy
+    is imported. Explicit user settings of the environment variables are respected.
+    """
+    if "numpy" in sys.modules:
+        return
+    for var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ.setdefault(var, "1")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    import multiprocessing
+    multiprocessing.freeze_support()  # harmless no-op unless a frozen child process starts
+    configure_compute_threads()
     args = parse_args(argv if argv is not None else sys.argv[1:])
     from PySide6.QtWidgets import QApplication
     import pyqtgraph as pg

@@ -175,6 +175,7 @@ class EngineBridge:
 
     def __init__(self) -> None:
         self._import_error: str | None = None
+        self._cavity_cache: Any = None  # core.cavity.CavityCache, created on first compute (§3.9)
 
     # -- engine -----------------------------------------------------------------------------------
     def _engine(self) -> Any:
@@ -213,8 +214,15 @@ class EngineBridge:
 
     def compute(self, inputs: Any, progress: Callable[[float, str], None] | None,
                 cancel: Callable[[], bool] | None) -> tuple[list[Any], list[Issue]]:
-        results, issues = self._engine().compute_project(inputs, progress=progress,
-                                                         cancel=cancel)
+        eng = self._engine()
+        if self._cavity_cache is None and hasattr(eng, "CavityCache"):
+            self._cavity_cache = eng.CavityCache()
+        kwargs: dict[str, Any] = {}
+        if self._cavity_cache is not None:
+            # cavity Z-matrices survive between runs: changing only decap models, via model or
+            # mounting inductance reuses them (§3.9); ``inputs.workers`` sets the thread count
+            kwargs["cavity_cache"] = self._cavity_cache
+        results, issues = eng.compute_project(inputs, progress=progress, cancel=cancel, **kwargs)
         return list(results), list(issues)
 
     # -- geometry ---------------------------------------------------------------------------------

@@ -54,7 +54,11 @@ Accuracy degrades above a few GHz (warning above 3 GHz, hard limit 20 GHz). Edge
 temperature or DC-bias derating. Touchstone: the file includes its fixture parasitics; extrapolation outside the file range is simple.</td></tr>
 <tr><td>11</td><td>IC side</td><td>No die capacitance or package model; the PAD is an ideal observation port at the board/substrate surface.</td></tr>
 <tr><td>12</td><td>Numerics</td><td>Sweep start at 1 kHz or higher. The limit of 1500 modes per axis may slightly under-resolve the spreading inductance for very
-large planes with very small drills (<code>W_MODES_CAPPED</code>).</td></tr>
+large planes with very small drills (<code>W_MODES_CAPPED</code>).
+Computation uses all CPU cores by default (Vias &rarr; Advanced &rarr; <a href="input_vias.html#advanced">Worker threads</a>). Plane matrices are kept in memory
+between runs (up to about 500 MB), so changing only decap models, the via model or the mounting inductance recomputes quickly; changing the plane,
+the decap counts or distances, the via drill/pitch/counts, the stack-up or the sweep recomputes everything. A very large net (more than a few hundred decap ports)
+needs memory for a frequency &times; ports &times; ports matrix (e.g. 400 points &times; 121 ports &asymp; 94 MB).</td></tr>
 <tr><td>13</td><td>Persistence</td><td>Only one running instance auto-saves. Computed results are not stored; they are recomputed on restore.</td></tr>
 </table>
 

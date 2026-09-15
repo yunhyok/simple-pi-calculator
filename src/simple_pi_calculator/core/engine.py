@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
@@ -12,9 +14,11 @@ import numpy as np
 
 from simple_pi_calculator.constants import (F_START_MIN_HZ, F_STOP_MAX_HZ, F_STOP_WARN_HZ,
                                             MARKER_FREQUENCIES_HZ, N_POINTS_MAX, N_POINTS_MIN)
-from simple_pi_calculator.core.cavity import CancelledError
+from simple_pi_calculator.core.cavity import CancelledError, CavityCache
 from simple_pi_calculator.core.decap_model import DecapModelCache
-from simple_pi_calculator.core.pdn import DecapGroup, PwrResult, PwrSpec, compute_pwr
+from simple_pi_calculator.core.parallel import blas_limited, resolve_workers
+from simple_pi_calculator.core.pdn import (STAGE_DYNAMIC, STAGE_REDUCE, STAGE_STATIC, DecapGroup,
+                                           PwrResult, PwrSpec, compute_pwr)
 from simple_pi_calculator.core.stackup import Stackup, check_pwr_layers
 from simple_pi_calculator.core.types import DecapRow, resolve_model_path
 from simple_pi_calculator.core.via import ViaSettings, validate_via_settings
@@ -30,6 +34,8 @@ __all__ = [
     "frequency_grid",
     "enabled_rows_for_pwr",
     "default_model_cache",
+    "default_cavity_cache",
+    "CavityCache",
 ]
 
 
@@ -52,9 +58,17 @@ class ProjectInputs:
     #: the same order, so a row shown as resolved must also resolve at compute time)
     decap_source_dir: str | None = None
     marker_f_hz: tuple[float, ...] = field(default=MARKER_FREQUENCIES_HZ)
+    #: worker threads (``advanced.workers``); 0 = auto = os.cpu_count() (§3.9)
+    workers: int = 0
 
 
 _DEFAULT_CACHE = DecapModelCache()
+_DEFAULT_CAVITY_CACHE = CavityCache()
+
+
+def default_cavity_cache() -> CavityCache:
+    """Module-level cavity Z-matrix cache shared by successive computations (§3.9)."""
+    return _DEFAULT_CAVITY_CACHE
 
 
 def default_model_cache() -> DecapModelCache:
@@ -143,73 +157,155 @@ def validate_inputs(inputs: ProjectInputs) -> list[Issue]:
 # =============================================================================================
 # Computation
 # =============================================================================================
+def _net_task(inputs: ProjectInputs, pwr: PwrSpec, grid: np.ndarray, cache: DecapModelCache,
+              cavity_cache: CavityCache | None, inner_workers: int,
+              progress: Callable[[float], None], stage_text: Callable[[str], None],
+              cancel: Callable[[], bool] | None) -> tuple[PwrResult | None, list[Issue]]:
+    """Compute one PWR net with per-net error isolation (§5.2); raises CancelledError only."""
+    pwr_issues = IssueCollector()
+    result = None
+    try:
+        stage_text("loading decap models")
+        paths = _validate_pwr(inputs, pwr, pwr_issues)
+        pwr_issues.raise_if_errors()
+        groups = []
+        for row, path in zip(enabled_rows_for_pwr(inputs.decap_rows, pwr.name), paths):
+            mode = row.s2p_mode or inputs.s2p_default_mode
+            model = cache.get(path, row.subckt, mode, pwr_issues)  # type: ignore[arg-type]
+            groups.append(DecapGroup(pwr_name=pwr.name, model=model, count=int(row.count),
+                                     distance_m=float(row.distance_m), dummy=bool(row.dummy)))
+
+        def sub(frac: float) -> None:
+            stage_text("decap models" if frac < STAGE_STATIC else
+                       "static mode sums" if frac < STAGE_DYNAMIC else
+                       "dynamic mode sums" if frac < STAGE_REDUCE else "port reduction")
+            progress(frac)
+
+        result = compute_pwr(inputs.stackup, pwr, groups, inputs.vias, grid,
+                             list(inputs.marker_f_hz), inputs.show_plane_only, pwr_issues,
+                             progress=sub, cancel=cancel, workers=inner_workers,
+                             cavity_cache=cavity_cache)
+    except CancelledError:
+        raise
+    except InputError as exc:
+        known = {id(i) for i in pwr_issues.issues}
+        for i in exc.issues:
+            if id(i) not in known:
+                pwr_issues.issues.append(i)
+    except Exception as exc:  # noqa: BLE001 - isolate unexpected failures per PWR (§5.2)
+        log.exception("Computation of PWR %s failed", pwr.name)
+        pwr_issues.error("E_PWR_INTERNAL", f"PWR {pwr.name}: unexpected error "
+                         f"({type(exc).__name__}: {exc}); other PWRs are not affected. "
+                         "See the log file for details.", f"PWR:{pwr.name}")
+    out = []
+    for i in pwr_issues.issues:
+        if i.source is None:
+            i = Issue(i.code, i.severity, i.message, f"PWR:{pwr.name}", i.location)
+        out.append(i)
+    return result, out
+
+
 def compute_project(inputs: ProjectInputs,
                     progress: Callable[[float, str], None] | None = None,
                     cancel: Callable[[], bool] | None = None,
                     cache: DecapModelCache | None = None,
+                    workers: int | None = None,
+                    cavity_cache: CavityCache | None | bool = True,
                     ) -> tuple[list[PwrResult], list[Issue]]:
     """Validates, computes every enabled PWR; per-PWR errors do not abort other PWRs.
 
     Global input errors (stack-up, sweep, vias) return ``([], issues)``. A failed PWR is omitted
     from the results; its errors carry ``source = "PWR:<name>"``. Raises :class:`CancelledError`.
+
+    ``workers`` (None → ``inputs.workers``; 0 → auto = ``os.cpu_count()``) worker threads are
+    shared between concurrently computed PWR nets and the frequency chunks inside each net
+    (§3.9). ``cavity_cache``: ``True`` = module default cache, ``None``/``False`` = no caching, or
+    a :class:`CavityCache`. Results, their order and the issue order do not depend on either.
     """
     cache = cache if cache is not None else _DEFAULT_CACHE
+    if cavity_cache is True:
+        cavity_cache = _DEFAULT_CAVITY_CACHE
+    elif cavity_cache is False:
+        cavity_cache = None
+    n_workers = resolve_workers(inputs.workers if workers is None else workers)
     issues = IssueCollector()
     _validate_global(inputs, issues)
     if issues.has_errors():
         return [], issues.issues
 
-    def check_cancel() -> None:
-        if cancel is not None and cancel():
-            raise CancelledError("computation cancelled")
+    if cancel is not None and cancel():
+        raise CancelledError("computation cancelled")
 
     grid = frequency_grid(inputs)
-    results: list[PwrResult] = []
-    n_pwr = max(1, len(inputs.pwrs))
-    for ip, pwr in enumerate(inputs.pwrs):
-        check_cancel()
-        base = ip / n_pwr
-        if progress is not None:
-            progress(base, f"{pwr.name}: loading decap models")
-        pwr_issues = IssueCollector()
-        try:
-            paths = _validate_pwr(inputs, pwr, pwr_issues)
-            pwr_issues.raise_if_errors()
-            groups = []
-            for row, path in zip(enabled_rows_for_pwr(inputs.decap_rows, pwr.name), paths):
-                mode = row.s2p_mode or inputs.s2p_default_mode
-                model = cache.get(path, row.subckt, mode, pwr_issues)  # type: ignore[arg-type]
-                groups.append(DecapGroup(pwr_name=pwr.name, model=model, count=int(row.count),
-                                         distance_m=float(row.distance_m), dummy=bool(row.dummy)))
+    pwrs = list(inputs.pwrs)
+    n_pwr = max(1, len(pwrs))
+    fracs = [0.0] * len(pwrs)
+    texts = [""] * len(pwrs)
+    lock = threading.Lock()
+    emitted = [0.0]
 
-            def sub(frac: float, _base=base, _name=pwr.name) -> None:
-                if progress is not None:
-                    stage = ("decap models" if frac < 0.10 else "static mode sums" if frac < 0.70
-                             else "dynamic mode sums" if frac < 0.95 else "port reduction")
-                    progress(_base + frac / n_pwr, f"{_name}: {stage}")
+    def make_progress(ip: int) -> tuple[Callable[[float], None], Callable[[str], None]]:
+        def prog(frac: float) -> None:
+            if progress is None:
+                return
+            with lock:
+                fracs[ip] = max(fracs[ip], min(1.0, frac))
+                total = min(1.0, max(emitted[0], sum(fracs) / n_pwr))
+                emitted[0] = total
+                progress(total, f"{pwrs[ip].name}: {texts[ip]}")
 
-            result = compute_pwr(inputs.stackup, pwr, groups, inputs.vias, grid,
-                                 list(inputs.marker_f_hz), inputs.show_plane_only, pwr_issues,
-                                 progress=sub, cancel=cancel)
-            results.append(result)
-        except CancelledError:
-            raise
-        except InputError as exc:
-            known = {id(i) for i in pwr_issues.issues}
-            for i in exc.issues:
-                if id(i) not in known:
-                    pwr_issues.issues.append(i)
-        except Exception as exc:  # noqa: BLE001 - isolate unexpected failures per PWR (§5.2)
-            log.exception("Computation of PWR %s failed", pwr.name)
-            pwr_issues.error("E_PWR_INTERNAL", f"PWR {pwr.name}: unexpected error "
-                             f"({type(exc).__name__}: {exc}); other PWRs are not affected. "
-                             "See the log file for details.", f"PWR:{pwr.name}")
-        finally:
-            for i in pwr_issues.issues:
-                src = i.source or f"PWR:{pwr.name}"
-                if i.source is None:
-                    i = Issue(i.code, i.severity, i.message, src, i.location)
-                issues.issues.append(i)
+        def text(msg: str) -> None:
+            if texts[ip] != msg:
+                texts[ip] = msg
+                prog(fracs[ip])
+        return prog, text
+
+    outer = min(n_workers, len(pwrs)) if pwrs else 1
+    inner = max(1, n_workers // max(1, outer))
+    outcomes: list[tuple[PwrResult | None, list[Issue]]] = []
+    with blas_limited(1):
+        if outer <= 1:
+            for ip, pwr in enumerate(pwrs):
+                if cancel is not None and cancel():
+                    raise CancelledError("computation cancelled")
+                prog, text = make_progress(ip)
+                outcomes.append(_net_task(inputs, pwr, grid, cache, cavity_cache, inner,
+                                          prog, text, cancel))
+        else:
+            stop = threading.Event()
+
+            def poll() -> bool:
+                if stop.is_set():
+                    return True
+                if cancel is not None and cancel():
+                    stop.set()
+                    return True
+                return False
+
+            def run(ip: int) -> tuple[PwrResult | None, list[Issue]]:
+                if poll():
+                    raise CancelledError("computation cancelled")
+                prog, text = make_progress(ip)
+                try:
+                    return _net_task(inputs, pwrs[ip], grid, cache, cavity_cache, inner,
+                                     prog, text, poll)
+                except CancelledError:
+                    stop.set()
+                    raise
+
+            with ThreadPoolExecutor(max_workers=outer, thread_name_prefix="spical-pwr") as pool:
+                futures = [pool.submit(run, ip) for ip in range(len(pwrs))]
+                cancelled = False
+                for fut in futures:
+                    try:
+                        outcomes.append(fut.result())
+                    except CancelledError:
+                        cancelled = True
+                if cancelled:
+                    raise CancelledError("computation cancelled")
+    results = [r for r, _ in outcomes if r is not None]
+    for _, net_issues in outcomes:
+        issues.issues.extend(net_issues)
     if progress is not None:
         progress(1.0, "done")
     return results, issues.issues
