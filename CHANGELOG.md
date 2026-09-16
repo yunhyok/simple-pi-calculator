@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-09-16
+
+- Fixed: the main splitter could not widen the input panel past the width of the "Curves" checkbox row; the row now wraps, the readout table scrolls, and the results pane has a 320 px minimum.
+- Changed: Dk/Df on metal stack-up rows are treated as the fill-in material properties (normal stack-up data) — one informational note per stack-up (`I_STACK_FILL_DKDF`) instead of a note per layer. The PI model does not use them.
+
 ## 0.3.0 — 2026-09-15
 
 ### Modelling

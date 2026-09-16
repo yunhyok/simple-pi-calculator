@@ -3,6 +3,6 @@
 The version string below is the single source of truth (DESIGN.md §7.3).
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = ["__version__"]

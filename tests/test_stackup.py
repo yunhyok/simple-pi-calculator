@@ -38,7 +38,7 @@ def test_example_validates_without_errors_or_warnings(example_stackup: Stackup):
     example_stackup.validate(issues)
     assert not issues.has_errors()
     assert not issues.warnings
-    assert set(_codes(issues)) == {"W_STACK_METAL_DKDF"}
+    assert set(_codes(issues)) == {"I_STACK_FILL_DKDF"}
 
 
 def test_layers_sorted_on_construction():

@@ -767,3 +767,47 @@ def test_checkbox_cell_toggles_once_per_click_or_double_click(make_window, qtbot
     qtbot.keyClick(view, Qt.Key.Key_Space)
     assert not w.project.decap_rows[0].dummy
     assert w.isWindowModified()
+
+
+# ---------------------------------------------------------------------------------------------
+# main splitter: the results pane must not block widening the inputs panel
+# ---------------------------------------------------------------------------------------------
+def test_main_splitter_not_clamped_by_results_pane(make_window, qtbot):
+    from simple_pi_calculator.gui.main_window import RESULTS_PANE_MIN_WIDTH
+
+    w = make_window(engine=FakeBridge())
+    w.resize(1600, 1000)
+    w.open_project(str(EXAMPLE))
+    with qtbot.waitSignal(w.computeFinished, timeout=10000):
+        w.start_compute()
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=5000)
+    # many PWRs with long names: the curve check-box row used to be a single QHBoxLayout whose
+    # width became the minimum width of the whole results pane
+    w.overview.set_names([f"VDD_RAIL_{i:02d}_1V{i}_MAIN_LONG_NAME" for i in range(16)])
+    qtbot.wait(20)
+    pane = w.results_pane
+    assert w.splitter.widget(1) is pane
+    assert pane.minimumSizeHint().width() <= 360
+    assert pane.minimumWidth() == RESULTS_PANE_MIN_WIDTH <= 360
+
+    w.splitter.setSizes([1100, 500])
+    qtbot.wait(20)
+    assert w.splitter.sizes()[0] >= 1050
+    w.splitter.setSizes([100000, 1])  # dragging right stops only at the small pane minimum
+    assert w.splitter.sizes()[1] == RESULTS_PANE_MIN_WIDTH
+    # check boxes wrap above the plot instead of overlapping it / being clipped
+    last = list(w.overview.checks.values())[-1]
+    assert last.geometry().right() <= w.overview.width()
+    assert last.geometry().bottom() < w.overview.plot.geometry().top()
+    # the readout table scrolls horizontally rather than squeezing its columns
+    table = w.readout_table
+    assert all(table.columnWidth(c) >= table.horizontalHeader().sectionSizeHint(c)
+               for c in range(table.columnCount()))
+
+    # stored splitter state still restores (both directions)
+    w.splitter.setSizes([1100, 488])
+    state = w.splitter.saveState()
+    w.splitter.setSizes([700, 888])
+    assert w.splitter.sizes()[0] < 800
+    assert w.splitter.restoreState(state)
+    assert w.splitter.sizes()[0] >= 1050

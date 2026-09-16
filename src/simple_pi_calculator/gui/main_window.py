@@ -8,7 +8,8 @@ import os
 import sys
 from typing import Any, Sequence
 
-from PySide6.QtCore import QThread, QTimer, QUrl, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, QThread, QTimer, QUrl, Qt, \
+    Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, QGuiApplication, \
     QKeySequence
 from PySide6.QtWidgets import (
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -128,6 +130,111 @@ def tab_for_issue(issue: Issue) -> int | None:
     return None
 
 
+#: Smallest width the results pane (right side of the main splitter) asks for.  Everything in it
+#: wraps or scrolls below this so the inputs panel can be widened freely.
+RESULTS_PANE_MIN_WIDTH = 320
+
+
+class FlowLayout(QLayout):
+    """Left-to-right layout that wraps onto further rows (Qt "flow layout" example).
+
+    Its minimum width is that of the widest single item, so a long list of widgets never forces
+    the parent wider than that."""
+
+    def __init__(self, parent: QWidget | None = None, spacing: int = 6):
+        super().__init__(parent)
+        self._items: list = []
+        self._spacing = spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):  # noqa: N802
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int):  # noqa: N802
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self._do_layout(QRect(0, 0, width, 0), apply=False)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        self._do_layout(rect, apply=True)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _do_layout(self, rect: QRect, apply: bool) -> int:
+        m = self.contentsMargins()
+        area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
+        x, y, line_h = area.x(), area.y(), 0
+        for item in self._items:
+            if item.isEmpty():
+                continue
+            hint = item.sizeHint()
+            if x > area.x() and x + hint.width() > area.right() + 1:
+                x, y, line_h = area.x(), y + line_h + self._spacing, 0
+            if apply:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + self._spacing
+            line_h = max(line_h, hint.height())
+        return y + line_h - rect.y() + m.bottom()
+
+
+class _ReadoutColumns(QObject):
+    """Readout table columns fill the viewport when there is room, otherwise keep a readable
+    width and let the table scroll horizontally (never enforces a minimum pane width)."""
+
+    def __init__(self, table: QTableWidget):
+        super().__init__(table)
+        self.table = table
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        table.installEventFilter(self)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        if obj is self.table and event.type() == QEvent.Type.Resize:
+            self.apply()
+        return False
+
+    def apply(self) -> None:
+        table = self.table
+        n = table.columnCount()
+        if n <= 0:
+            return
+        header = table.horizontalHeader()
+        # Width available to the columns, computed from the table frame (not the viewport) and
+        # always reserving room for a vertical scroll bar: it must not depend on scroll-bar
+        # visibility, or showing/hiding a bar would re-trigger this in a loop.
+        bar = table.style().pixelMetric(table.style().PixelMetric.PM_ScrollBarExtent, None, table)
+        vheader = table.verticalHeader().width() if table.verticalHeader().isVisible() else 0
+        share = max(0, table.contentsRect().width() - vheader - bar) // n
+        for col in range(n):
+            wanted = max(header.sectionSizeHint(col), table.sizeHintForColumn(col))
+            header.resizeSection(col, max(wanted, share))
+
+
 class OverviewPanel(QWidget):
     """Combined plot (one curve per PWR) with per-curve visibility check boxes."""
 
@@ -136,9 +243,10 @@ class OverviewPanel(QWidget):
         self.plot = plot
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.checks_row = QHBoxLayout()
+        # The check boxes wrap onto further rows: a single QHBoxLayout made the minimum width
+        # of the whole results pane the sum of all PWR names, which blocked the main splitter.
+        self.checks_row = FlowLayout()
         self.checks_row.addWidget(QLabel("Curves:", self))
-        self.checks_row.addStretch(1)
         layout.addLayout(self.checks_row)
         layout.addWidget(plot, 1)
         self.checks: dict[str, QCheckBox] = {}
@@ -153,8 +261,9 @@ class OverviewPanel(QWidget):
             box.setChecked(True)
             box.setStyleSheet(f"QCheckBox {{ color: {series_color(i)}; font-weight: bold; }}")
             box.toggled.connect(lambda on, n=name: self.plot.set_curve_visible(n, on))
-            self.checks_row.insertWidget(self.checks_row.count() - 1, box)
+            self.checks_row.addWidget(box)
             self.checks[name] = box
+        self.checks_row.invalidate()
 
 
 class MainWindow(QMainWindow):
@@ -268,6 +377,8 @@ class MainWindow(QMainWindow):
 
         # right: results
         right = QWidget(self.splitter)
+        right.setObjectName("ResultsPane")
+        self.results_pane = right
         rbox = QVBoxLayout(right)
         rbox.setContentsMargins(0, 0, 0, 0)
         self.results_toolbar = QToolBar("Results", right)
@@ -283,8 +394,7 @@ class MainWindow(QMainWindow):
         self.result_tabs.addTab(self.overview, OVERVIEW_TAB)
         self.readout_table = QTableWidget(0, len(MARKER_FREQUENCIES_HZ), result_splitter)
         self.readout_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.readout_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+        self._readout_columns = _ReadoutColumns(self.readout_table)
         self.readout_table.setMinimumHeight(80)
         result_splitter.addWidget(self.result_tabs)
         result_splitter.addWidget(self.readout_table)
@@ -292,6 +402,9 @@ class MainWindow(QMainWindow):
         rbox.addWidget(result_splitter)
         self.splitter.addWidget(self.input_tabs)
         self.splitter.addWidget(right)
+        # The results pane's contents wrap/scroll, and its explicit minimum is small, so dragging
+        # the handle right is limited only by RESULTS_PANE_MIN_WIDTH (not by plot/check-box rows).
+        right.setMinimumWidth(RESULTS_PANE_MIN_WIDTH)
         self.splitter.setStretchFactor(0, 4)
         self.splitter.setStretchFactor(1, 6)
         self.splitter.setSizes([440, 660])
@@ -1562,6 +1675,7 @@ class MainWindow(QMainWindow):
                     continue
                 label = QLabel(f"The computation of {name} failed — see Messages.")
                 label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                label.setWordWrap(True)
                 i = self.result_tabs.addTab(label, name)
                 self.result_tabs.setTabIcon(i, self.style().standardIcon(
                     self.style().StandardPixmap.SP_MessageBoxCritical))
@@ -1659,6 +1773,7 @@ class MainWindow(QMainWindow):
                 if val is not None:
                     item.setData(Qt.ItemDataRole.UserRole, float(val))
                 table.setItem(r, c, item)
+        self._readout_columns.apply()
 
 
 __all__ = ["MainWindow", "examples_dir", "OVERVIEW_TAB"]

@@ -1185,7 +1185,7 @@ with 1); the remaining time is split evenly between static sums, Z(f) and the re
 | W_STACK_DF_MISSING | warning | dielectric row with Df missing → 0 used |
 | E_STACK_DF | error | Df < 0 or Df > 1 |
 | W_STACK_SIGMA_RANGE | warning | metal σ outside [1e5, 1e8] S/m |
-| W_STACK_METAL_DKDF | info | metal Dk/Df present (ignored) |
+| I_STACK_FILL_DKDF | info | Dk/Df on metal rows read as fill-in material properties; not used by the model (once per stack-up) |
 | W_STACK_ADJ_METAL | info | two metal rows adjacent without dielectric (allowed) |
 
 **Example (bundled `examples/stackup_6L.xlsx`, sheet `Stackup`, header in row 1):**

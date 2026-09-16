@@ -126,6 +126,7 @@ class Stackup:
                            source)
 
         previous: Layer | None = None
+        fill_noted = False
         for layer in self.layers:
             label = layer.label
             if not (layer.thickness_m > 0.0) or not math.isfinite(layer.thickness_m):
@@ -137,9 +138,12 @@ class Stackup:
                     issues.warning("W_STACK_SIGMA_RANGE",
                                    f"{label}: conductivity {sigma:g} S/m is outside "
                                    f"[{SIGMA_WARN_MIN:g}, {SIGMA_WARN_MAX:g}] S/m.", source)
-                if layer.dk is not None or layer.df is not None:
-                    issues.info("W_STACK_METAL_DKDF",
-                                f"{label}: Dk/Df given for a metal layer (ignored).", source)
+                if (layer.dk is not None or layer.df is not None) and not fill_noted:
+                    fill_noted = True
+                    issues.info("I_STACK_FILL_DKDF",
+                                "Dk/Df on metal rows are read as the fill-in (inter-trace) "
+                                "material properties; the PI model does not use them "
+                                "(via inductance depends on geometry and mu0 only).", source)
                 if previous is not None and previous.is_metal:
                     issues.info("W_STACK_ADJ_METAL",
                                 f"Metal layers {previous.number} and {layer.number} are adjacent "

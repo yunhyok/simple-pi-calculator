@@ -139,7 +139,7 @@ layers determine the conductor loss of the planes (skin effect).</p>
 <tr><td><code>W_STACK_DF_MISSING</code></td><td>Dielectric row without Df; 0 (lossless) is used.</td><td>Enter Df; losses damp the plane resonances.</td></tr>
 <tr><td><code>E_STACK_DF</code></td><td>Df below 0 or above 1.</td><td>Enter Df as a fraction (0.02), not in percent.</td></tr>
 <tr><td><code>W_STACK_SIGMA_RANGE</code></td><td>Metal conductivity outside 1e5 … 1e8 S/m.</td><td>Check the exponent (copper 5.8E7).</td></tr>
-<tr><td><code>W_STACK_METAL_DKDF</code> (info)</td><td>Dk/Df given on a metal row; they are ignored.</td><td>Nothing, or clear the cells.</td></tr>
+<tr><td><code>I_STACK_FILL_DKDF</code> (info)</td><td>Dk/Df on metal rows are read as the fill-in (inter-trace) material properties. They are normal stack-up data and are kept in the project, but the PI model does not use them: via inductance depends only on geometry and &mu;<sub>0</sub>, and the via barrel capacitance that would use them is tens of fF (negligible below several GHz).</td><td>Nothing.</td></tr>
 <tr><td><code>W_STACK_ADJ_METAL</code> (info)</td><td>Two metal rows are adjacent without dielectric between them.</td><td>Allowed; check that this is intended.</td></tr>
 <tr><td><code>W_STACK_METAL_BETWEEN</code></td><td>A metal layer lies between the PWR and GND layers of a PWR net. It is assumed to be cleared (filled with dielectric) in the plane area; its thickness is included in d.</td><td>Choose the adjacent GND plane as reference if possible.</td></tr>
 <tr><td><code>E_STACK_NO_DIELECTRIC</code></td><td>There is no dielectric layer between the PWR and GND layer of a PWR net.</td><td>Check the layer numbers in the PWR list.</td></tr>
