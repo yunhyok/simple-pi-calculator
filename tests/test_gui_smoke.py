@@ -796,9 +796,18 @@ def test_main_splitter_not_clamped_by_results_pane(make_window, qtbot):
     w.splitter.setSizes([100000, 1])  # dragging right stops only at the small pane minimum
     assert w.splitter.sizes()[1] == RESULTS_PANE_MIN_WIDTH
     # check boxes wrap above the plot instead of overlapping it / being clipped
+    from PySide6.QtWidgets import QApplication
+    flow = w.overview.checks_row
+    assert flow.hasHeightForWidth()
+    assert flow.heightForWidth(316) > flow.heightForWidth(2000)  # wraps when narrow
+    w.overview.layout().activate()
+    QApplication.processEvents()
     last = list(w.overview.checks.values())[-1]
-    assert last.geometry().right() <= w.overview.width()
-    assert last.geometry().bottom() < w.overview.plot.geometry().top()
+    assert all(box.geometry().right() <= w.overview.width()
+               for box in w.overview.checks.values())
+    rows_h = flow.heightForWidth(w.overview.width())
+    if rows_h + 150 <= w.overview.height():  # rows fit (always with default fonts at 1000 px)
+        assert last.geometry().bottom() < w.overview.plot.geometry().top()
     # the readout table scrolls horizontally rather than squeezing its columns
     table = w.readout_table
     assert all(table.columnWidth(c) >= table.horizontalHeader().sectionSizeHint(c)
@@ -807,7 +816,8 @@ def test_main_splitter_not_clamped_by_results_pane(make_window, qtbot):
     # stored splitter state still restores (both directions)
     w.splitter.setSizes([1100, 488])
     state = w.splitter.saveState()
-    w.splitter.setSizes([700, 888])
-    assert w.splitter.sizes()[0] < 800
+    narrow = w.splitter.widget(0).minimumSizeHint().width() + 20  # font-dependent
+    w.splitter.setSizes([narrow, 1588 - narrow])
+    assert w.splitter.sizes()[0] < 1050
     assert w.splitter.restoreState(state)
     assert w.splitter.sizes()[0] >= 1050

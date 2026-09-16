@@ -138,8 +138,10 @@ RESULTS_PANE_MIN_WIDTH = 320
 class FlowLayout(QLayout):
     """Left-to-right layout that wraps onto further rows (Qt "flow layout" example).
 
-    Its minimum width is that of the widest single item, so a long list of widgets never forces
-    the parent wider than that."""
+    Its minimum width is that of the widest item (capped), so a long list of widgets never forces
+    the parent wider than that; an item wider than the row is narrowed to the row."""
+
+    MIN_ITEM_WIDTH = 120
 
     def __init__(self, parent: QWidget | None = None, spacing: int = 6):
         super().__init__(parent)
@@ -179,6 +181,10 @@ class FlowLayout(QLayout):
         size = QSize()
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
+        # items wider than the row are narrowed in _do_layout, so the layout never needs to be
+        # wider than MIN_ITEM_WIDTH (QCheckBox reports its full text width as its minimum,
+        # which with large fonts / long names would again pin the pane wide)
+        size.setWidth(min(size.width(), self.MIN_ITEM_WIDTH))
         m = self.contentsMargins()
         return size + QSize(m.left() + m.right(), m.top() + m.bottom())
 
@@ -190,6 +196,10 @@ class FlowLayout(QLayout):
             if item.isEmpty():
                 continue
             hint = item.sizeHint()
+            if area.width() > 0 and hint.width() > area.width():
+                # a single item wider than the row (long name / large font) is narrowed to the
+                # row instead of overflowing it; callers put the full text in a tool tip
+                hint.setWidth(area.width())
             if x > area.x() and x + hint.width() > area.right() + 1:
                 x, y, line_h = area.x(), y + line_h + self._spacing, 0
             if apply:
@@ -258,6 +268,7 @@ class OverviewPanel(QWidget):
         self.checks.clear()
         for i, name in enumerate(names):
             box = QCheckBox(name, self)
+            box.setToolTip(name)
             box.setChecked(True)
             box.setStyleSheet(f"QCheckBox {{ color: {series_color(i)}; font-weight: bold; }}")
             box.toggled.connect(lambda on, n=name: self.plot.set_curve_visible(n, on))
