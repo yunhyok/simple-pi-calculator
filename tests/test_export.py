@@ -455,9 +455,178 @@ def test_ctrl_d_resets_view(window, qtbot):
     assert plot.is_default_view()
 
 
+def _show_two_decades(w) -> None:
+    """Replace the fixture results by two curves a decade apart, so hiding one visibly changes
+    the fitted |Z| range (the default fake results differ only in their tiny real part)."""
+    base = fake_result("VDD_CORE", 1e-3, plane=True)
+    big = fake_result("VDD/IO:2", 1e-3)
+    w.show_results([
+        FakeResult("VDD_CORE", base.f_hz, base.z_pad, base.z_plane_only, base.marker_f_hz,
+                   base.marker_z, base.info),
+        FakeResult("VDD/IO:2", big.f_hz, 10 * big.z_pad, None, big.marker_f_hz,
+                   10 * big.marker_z, big.info),
+    ])
+
+
+def _log_bounds(result, scale: float = 1e3) -> tuple[float, float]:
+    """log10 of min/max |Z| of a fake result in the plot unit (default mΩ)."""
+    z = np.abs(np.asarray(result.z_pad, dtype=complex)) * scale
+    return math.log10(float(z.min())), math.log10(float(z.max()))
+
+
+def _mouse_zoom(plot, x_range, y_range) -> None:
+    """A programmatic range change plus the signal a real mouse zoom/pan emits."""
+    plot.vb.setRange(xRange=x_range, yRange=y_range, padding=0)
+    plot.vb.sigRangeChangedManually.emit([True, True])
+
+
+@gui
+def test_reset_view_fits_the_visible_curves_only(window, qtbot):
+    """Hiding the larger curve and resetting must fit the remaining one (§5.6)."""
+    w = window
+    _show_two_decades(w)
+    w.select_result_tab(None)
+    plot = w.overview_plot
+    qtbot.wait(50)
+    assert plot.is_default_view()
+    (_, y1_both) = plot.vb.viewRange()[1]
+
+    w.overview.set_curve_checked("VDD/IO:2", False)
+    w.reset_view()
+    assert plot.is_default_view()
+    (x0, x1), (y0, y1) = plot.vb.viewRange()
+    lo, hi = _log_bounds([r for r in w.results if r.name == "VDD_CORE"][0])
+    span = hi - lo
+    # tight around the visible curve: inside the padded range, at most 5 % of the span away
+    assert y0 < lo and y0 == pytest.approx(lo, abs=0.051 * span)
+    assert y1 > hi and y1 == pytest.approx(hi, abs=0.051 * span)
+    assert y1_both > y1 + 0.2                      # the hidden 2× curve no longer counts
+    # x stays the full sweep (1e5 … 1e9) with the same small padding
+    assert x0 < 5.0 and x0 == pytest.approx(5.0, abs=0.21)
+    assert x1 > 9.0 and x1 == pytest.approx(9.0, abs=0.21)
+
+    # nothing visible → fall back to the full data range
+    w.overview.curve_list.check_none()
+    w.reset_view()
+    assert plot.vb.viewRange()[1][1] == pytest.approx(y1_both, abs=1e-6)
+
+    # a per-PWR tab uses the same routine for its single curve
+    single = w.plots["VDD_CORE"]
+    single.reset_view()
+    sy0, sy1 = single.vb.viewRange()[1]
+    assert sy0 == pytest.approx(y0, abs=0.02) and sy1 == pytest.approx(y1, abs=0.02)
+
+
+@gui
+def test_visibility_refits_only_while_the_view_is_fresh(window, qtbot):
+    w = window
+    _show_two_decades(w)
+    w.select_result_tab(None)
+    plot = w.overview_plot
+    qtbot.wait(50)
+    # fresh view: hiding a curve re-fits immediately, without any reset
+    w.overview.set_curve_checked("VDD/IO:2", False)
+    assert plot.is_default_view()
+    fitted = [v for r in plot.vb.viewRange() for v in r]
+    lo, hi = _log_bounds([r for r in w.results if r.name == "VDD_CORE"][0])
+    assert fitted[2] < lo and fitted[3] > hi and fitted[3] < hi + 0.2
+
+    # after a mouse zoom the view is frozen: toggling curves must not move it
+    _mouse_zoom(plot, (6.0, 7.0), (0.5, 1.0))
+    assert not plot.view_is_fresh() and not plot.is_default_view()
+    w.overview.curve_list.check_all()
+    assert [v for r in plot.vb.viewRange() for v in r] == pytest.approx([6.0, 7.0, 0.5, 1.0])
+    w.overview.set_curve_checked("VDD_CORE", False)
+    assert [v for r in plot.vb.viewRange() for v in r] == pytest.approx([6.0, 7.0, 0.5, 1.0])
+    # a unit switch only rescales it (no re-fit)
+    w.set_z_unit("uohm")
+    assert [v for r in plot.vb.viewRange() for v in r] == pytest.approx([6.0, 7.0, 3.5, 4.0])
+
+    # an explicit reset unfreezes the view and re-fits the visible curves again
+    w.reset_view()
+    assert plot.view_is_fresh() and plot.is_default_view()
+    (y0, y1) = plot.vb.viewRange()[1]
+    lo, hi = _log_bounds([r for r in w.results if r.name == "VDD/IO:2"][0], 1e6)
+    assert y0 < lo and y1 > hi
+    # and the re-fitted view follows the unit again
+    w.set_z_unit("mohm")
+    assert plot.is_default_view()
+    assert plot.vb.viewRange()[1][1] == pytest.approx(y1 - 3.0, abs=0.02)
+
+
+@gui
+def test_ctrl_d_fits_visible_curves_on_the_overview_tab(window, qtbot):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    w = window
+    _show_two_decades(w)
+    w.select_result_tab(None)
+    plot = w.overview_plot
+    w.overview.set_curve_checked("VDD/IO:2", False)
+    _mouse_zoom(plot, (6.0, 7.0), (0.5, 1.0))
+    w.activateWindow()
+    w.raise_()
+    qtbot.waitUntil(lambda: w.isActiveWindow(), timeout=2000)
+    QTest.keyClick(w, Qt.Key.Key_D, Qt.KeyboardModifier.ControlModifier)
+    qtbot.waitUntil(plot.is_default_view, timeout=2000)
+    lo, hi = _log_bounds([r for r in w.results if r.name == "VDD_CORE"][0])
+    y0, y1 = plot.vb.viewRange()[1]
+    assert y0 < lo and y1 > hi and y1 < hi + 0.2
+
+
+@gui
+def test_export_all_plots_respects_curve_visibility(window, tmp_path: Path):
+    w = window
+    _show_two_decades(w)
+    w.overview.set_curve_checked("VDD/IO:2", False)
+    twin = w.overview_plot.make_export_copy(900, 600)
+    try:
+        assert twin.is_curve_visible("VDD_CORE")
+        assert not twin.is_curve_visible("VDD/IO:2")
+        hidden_hi = _log_bounds([r for r in w.results if r.name == "VDD/IO:2"][0])[1]
+        assert twin.vb.viewRange()[1][1] < hidden_hi   # the hidden curve is not fitted in
+    finally:
+        twin.hide()
+        twin.deleteLater()
+    written = w.export_all_plots(str(tmp_path / "vis"), "png", 500, 400)
+    assert len(written) == 3 and all(os.path.getsize(p) > 5_000 for p in written)
+
+
+@gui
+def test_plot_legend_toggle_off_but_exports_keep_it(window, tmp_path: Path):
+    w = window
+    # default: the curve list names the curves, the in-plot legend is off on every tab
+    assert not w.act_legend.isChecked()
+    for plot in [w.overview_plot, *w.plots.values()]:
+        assert not plot.legend_visible() and not plot.legend.isVisible()
+
+    w.act_legend.setChecked(True)
+    for plot in [w.overview_plot, *w.plots.values()]:
+        assert plot.legend_visible() and plot.legend.isVisible()
+    w.act_legend.setChecked(False)
+    assert not w.overview_plot.legend.isVisible()
+    # hiding a curve must not bring the legend back
+    w.overview.set_curve_checked("VDD/IO:2", False)
+    assert not w.overview_plot.legend.isVisible()
+
+    # exported images have no curve list beside them, so the twin always carries the legend
+    twin = w.overview_plot.make_export_copy(900, 600)
+    try:
+        assert twin.legend_visible() and twin.legend.isVisible()
+        assert [label.text for _sample, label in twin.legend.items] == ["VDD_CORE"]
+    finally:
+        twin.hide()
+        twin.deleteLater()
+    assert len(w.export_all_plots(str(tmp_path / "leg"), "png", 500, 400)) == 3
+    assert not w.overview_plot.legend.isVisible()      # the on-screen plot is untouched
+
+
 @gui
 def test_fresh_results_show_default_view(window):
     for plot in [window.overview_plot, *window.plots.values()]:
-        assert all(plot.vb.autoRangeEnabled())
+        # the range is set explicitly from the visible curves, pyqtgraph auto-range stays off
+        assert plot.view_is_fresh()
+        assert not any(plot.vb.autoRangeEnabled())
         assert plot.is_default_view()
         assert math.isfinite(plot.vb.viewRange()[0][0])

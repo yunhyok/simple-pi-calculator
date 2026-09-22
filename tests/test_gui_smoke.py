@@ -24,6 +24,7 @@ pytest.importorskip("pytestqt")
 pytest.importorskip("pyqtgraph")
 
 from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtWidgets import QAbstractItemView  # noqa: E402
 
 from simple_pi_calculator.constants import MARKER_FREQUENCIES_HZ  # noqa: E402
 from simple_pi_calculator.errors import Issue, Severity  # noqa: E402
@@ -275,12 +276,122 @@ def test_plot_markers_and_unit_switch(make_window):
     w.act_plane_only.setChecked(True)
     assert plot.plane_curve("A").isVisible()
     assert w.project.sweep.show_plane_only
-    w.overview.checks["B"].setChecked(False)
+    w.overview.set_curve_checked("B", False)
     assert not w.overview_plot.is_curve_visible("B")
     assert "µΩ" in plot.hover_text(7.0)
     w.select_result_tab("A")
     w.reset_zoom()
     assert w.current_plot() is plot
+
+
+# ---------------------------------------------------------------------------------------------
+# All PWRs curve list (§5.5)
+# ---------------------------------------------------------------------------------------------
+NAMES4 = ["VDD_CORE", "VDD_IO", "VCC_AUX", "VDD_MEM"]
+
+
+def _show_named(w: MainWindow, names=NAMES4) -> None:
+    w.show_results([fake_result(n, 1e-3 * (i + 1)) for i, n in enumerate(names)])
+
+
+def test_curve_list_rows_filter_and_bulk_actions(make_window):
+    w = make_window()
+    _show_named(w)
+    panel = w.overview.curve_list
+    assert panel.names() == NAMES4                      # table order
+    assert panel.visible_names() == NAMES4
+    first = panel.list.item(0)
+    assert first.toolTip() == "VDD_CORE" and not first.icon().isNull()   # colour swatch
+    assert first.checkState() == Qt.CheckState.Checked
+
+    # filter: hides rows without touching the check marks or the plot
+    panel.search.setText("vdd_")
+    assert panel.rows_shown() == ["VDD_CORE", "VDD_IO", "VDD_MEM"]
+    assert panel.visible_names() == NAMES4
+    assert all(w.overview_plot.is_curve_visible(n) for n in NAMES4)
+    panel.search.setText("mem")
+    assert panel.rows_shown() == ["VDD_MEM"]
+    panel.search.clear()
+    assert panel.rows_shown() == NAMES4
+
+    panel.check_none()
+    assert panel.hidden_names() == NAMES4
+    assert not any(w.overview_plot.is_curve_visible(n) for n in NAMES4)
+    panel.check_all()
+    assert panel.hidden_names() == []
+    panel.set_checked("VDD_IO", False)
+    assert not w.overview_plot.is_curve_visible("VDD_IO")
+    # the legend lists the visible curves only, in series order
+    assert [label.text for _sample, label in w.overview_plot.legend.items] == \
+        [n for n in NAMES4 if n != "VDD_IO"]
+    panel.invert()
+    assert panel.visible_names() == ["VDD_IO"]
+
+    # "Only selected" (button) and the identical context-menu actions
+    panel.list.clearSelection()
+    panel.list.item(0).setSelected(True)
+    panel.list.item(3).setSelected(True)
+    panel.buttons["Only selected"].click()
+    assert panel.visible_names() == ["VDD_CORE", "VDD_MEM"]
+    assert [n for n in NAMES4 if w.overview_plot.is_curve_visible(n)] == ["VDD_CORE", "VDD_MEM"]
+    assert list(panel.actions_) == ["All", "None", "Invert", "Only selected"]
+    panel.actions_["All"].trigger()
+    assert panel.hidden_names() == []
+    assert all(w.overview_plot.is_curve_visible(n) for n in NAMES4)
+
+
+def test_curve_list_space_toggles_all_selected_rows(make_window):
+    from PySide6.QtTest import QTest
+
+    w = make_window()
+    _show_named(w)
+    panel = w.overview.curve_list
+    assert panel.list.selectionMode() == QAbstractItemView.SelectionMode.ExtendedSelection
+    panel.list.setCurrentItem(panel.list.item(0))
+    panel.list.item(0).setSelected(True)
+    panel.list.item(2).setSelected(True)
+    assert panel.selected_names() == ["VDD_CORE", "VCC_AUX"]
+
+    QTest.keyClick(panel.list, Qt.Key.Key_Space)
+    assert panel.hidden_names() == ["VDD_CORE", "VCC_AUX"]
+    assert not w.overview_plot.is_curve_visible("VDD_CORE")
+    assert w.overview_plot.is_curve_visible("VDD_IO")
+    QTest.keyClick(panel.list, Qt.Key.Key_Space)      # and back on
+    assert panel.hidden_names() == []
+    assert all(w.overview_plot.is_curve_visible(n) for n in NAMES4)
+
+
+def test_curve_visibility_filters_the_readout_table(make_window):
+    w = make_window()
+    _show_named(w, ["A", "B"])
+    assert w.readout_table.rowCount() == 2
+    w.overview.set_curve_checked("B", False)
+    assert w.readout_table.rowCount() == 1
+    assert w.readout_table.verticalHeaderItem(0).text() == "A"
+    assert w.readout_values()[1][0] is not None          # the values themselves are unchanged
+    w.overview.curve_list.check_all()
+    assert w.readout_table.rowCount() == 2
+
+
+def test_curve_visibility_and_panel_width_persist(make_window, qtbot, appdata):
+    w = make_window(engine=FakeBridge())
+    w.open_project(str(EXAMPLE))
+    with qtbot.waitSignal(w.computeFinished, timeout=10000):
+        w.start_compute()
+    qtbot.waitUntil(lambda: not w.is_computing(), timeout=5000)
+    w.overview.set_curve_checked("VDD_IO", False)
+    w.overview.set_panel_width(180)
+    assert w.collect_session().hidden_curves == ["VDD_IO"]
+    assert w.collect_session().window.curve_panel_width == 180
+    w.close()
+
+    w2 = make_window(engine=FakeBridge())
+    qtbot.waitUntil(lambda: len(w2.plots) == 2 and not w2.is_computing(), timeout=20000)
+    assert w2.overview.hidden_names() == ["VDD_IO"]
+    assert not w2.overview_plot.is_curve_visible("VDD_IO")
+    assert w2.overview_plot.is_curve_visible("VDD_CORE")
+    assert w2.readout_table.rowCount() == 1
+    assert abs(w2.overview.panel_width() - 180) <= 5
 
 
 # ---------------------------------------------------------------------------------------------
@@ -781,8 +892,8 @@ def test_main_splitter_not_clamped_by_results_pane(make_window, qtbot):
     with qtbot.waitSignal(w.computeFinished, timeout=10000):
         w.start_compute()
     qtbot.waitUntil(lambda: not w.is_computing(), timeout=5000)
-    # many PWRs with long names: the curve check-box row used to be a single QHBoxLayout whose
-    # width became the minimum width of the whole results pane
+    # many PWRs with long names: the curve list next to the plot must not pin the pane wide
+    # (the 0.3.x check-box row did, first as one QHBoxLayout and then through its item widths)
     w.overview.set_names([f"VDD_RAIL_{i:02d}_1V{i}_MAIN_LONG_NAME" for i in range(16)])
     qtbot.wait(20)
     pane = w.results_pane
@@ -795,19 +906,18 @@ def test_main_splitter_not_clamped_by_results_pane(make_window, qtbot):
     assert w.splitter.sizes()[0] >= 1050
     w.splitter.setSizes([100000, 1])  # dragging right stops only at the small pane minimum
     assert w.splitter.sizes()[1] == RESULTS_PANE_MIN_WIDTH
-    # check boxes wrap above the plot instead of overlapping it / being clipped
+    # the curve list stays beside the plot, elides long names and never overflows the panel
     from PySide6.QtWidgets import QApplication
-    flow = w.overview.checks_row
-    assert flow.hasHeightForWidth()
-    assert flow.heightForWidth(316) > flow.heightForWidth(2000)  # wraps when narrow
+    from simple_pi_calculator.gui.main_window import CURVE_PANEL_MIN_WIDTH
+
+    panel = w.overview.curve_list
+    assert panel.minimumSizeHint().width() <= 260
+    assert panel.minimumWidth() == CURVE_PANEL_MIN_WIDTH
     w.overview.layout().activate()
     QApplication.processEvents()
-    last = list(w.overview.checks.values())[-1]
-    assert all(box.geometry().right() <= w.overview.width()
-               for box in w.overview.checks.values())
-    rows_h = flow.heightForWidth(w.overview.width())
-    if rows_h + 150 <= w.overview.height():  # rows fit (always with default fonts at 1000 px)
-        assert last.geometry().bottom() < w.overview.plot.geometry().top()
+    assert panel.list.textElideMode() == Qt.TextElideMode.ElideRight
+    assert panel.geometry().right() <= w.overview.width()
+    assert w.overview.plot.geometry().right() <= panel.geometry().left()
     # the readout table scrolls horizontally rather than squeezing its columns
     table = w.readout_table
     assert all(table.columnWidth(c) >= table.horizontalHeader().sectionSizeHint(c)

@@ -159,6 +159,7 @@ class WindowState:
     result_tab: str | None = None
     decap_filter: str | None = None
     message_dock_visible: bool = True
+    curve_panel_width: int = -1     # px width of the All PWRs curve list (-1 = not stored)
 
 
 @dataclass
@@ -179,6 +180,7 @@ class Session:
     recent_files: list[str] = field(default_factory=list)
     window: WindowState = field(default_factory=WindowState)
     plots: dict[str, PlotView] = field(default_factory=dict)
+    hidden_curves: list[str] = field(default_factory=list)   # unchecked PWRs of the All PWRs tab
     had_results: bool = False
     saved_utc: str | None = None
 
@@ -275,13 +277,15 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
                    "splitter_sizes": [int(s) for s in w.splitter_sizes],
                    "input_tab": int(w.input_tab), "result_tab": w.result_tab,
                    "decap_filter": w.decap_filter,
-                   "message_dock_visible": bool(w.message_dock_visible)},
+                   "message_dock_visible": bool(w.message_dock_visible),
+                   "curve_panel_width": int(w.curve_panel_width)},
         "plots": {name: {"auto_range": bool(v.auto_range),
                          "x_range_log10": None if v.x_range_log10 is None
                          else [float(v.x_range_log10[0]), float(v.x_range_log10[1])],
                          "y_range_log10": None if v.y_range_log10 is None
                          else [float(v.y_range_log10[0]), float(v.y_range_log10[1])]}
                   for name, v in session.plots.items()},
+        "hidden_curves": [str(n) for n in session.hidden_curves],
         "had_results": bool(session.had_results),
         "saved_utc": session.saved_utc,
     }
@@ -511,6 +515,7 @@ def _session_from_dict(raw: Any) -> Session:
         w.result_tab = get(window, "result_tab", (str,), None)
         w.decap_filter = get(window, "decap_filter", (str,), None)
         w.message_dock_visible = get(window, "message_dock_visible", (bool,), True)
+        w.curve_panel_width = max(-1, int(get(window, "curve_panel_width", (int, float), -1)))
         session.window = w
     plots = raw.get("plots")
     if isinstance(plots, dict):
@@ -524,6 +529,9 @@ def _session_from_dict(raw: Any) -> Session:
                         isinstance(x, (int, float)) and not isinstance(x, bool) for x in rng)):
                     setattr(pv, attr, (float(rng[0]), float(rng[1])))
             session.plots[str(name)] = pv
+    hidden = raw.get("hidden_curves")
+    if isinstance(hidden, list):
+        session.hidden_curves = [n for n in hidden if isinstance(n, str)]
     session.had_results = get(raw, "had_results", (bool,), False)
     session.saved_utc = get(raw, "saved_utc", (str,), None)
     return session

@@ -39,10 +39,36 @@ readout table. This page explains how to read and use them, how to set the sweep
 <tr><td>4</td><td>Marker lines</td><td>Red dashed vertical lines at 1 MHz, 10 MHz and 100 MHz. Markers outside the sweep range are not drawn (readout "n/a").</td></tr>
 <tr><td>5</td><td>Marker readout</td><td>Dot and label with |Z| at the marker frequency, computed exactly at that frequency (4 significant digits).</td></tr>
 <tr><td>6</td><td>Hover readout</td><td>Frequency and |Z| of the curve point nearest to the mouse, in the top-left corner.</td></tr>
-<tr><td>7</td><td>Legend</td><td>"Z at PAD" (solid blue) and, if enabled, "plane only" (dashed grey).</td></tr>
+<tr><td>7</td><td>Legend</td><td>"Z at PAD" (solid blue) and, if enabled, "plane only" (dashed grey). The legend inside the plot is off by default – switch it on with <b>View ▸ Show Plot Legend</b>; exported images always contain it.</td></tr>
 <tr><td>8</td><td>Plane-only curve</td><td>Impedance of the bare synthetic plane plus PAD vias, without any decap (see <a href="#planeonly">below</a>).</td></tr>
-<tr><td>9</td><td>Readout table</td><td>Rows = PWR nets, columns = |Z| at 1, 10, 100 MHz in the current unit.</td></tr>
+<tr><td>9</td><td>Readout table</td><td>Rows = the PWR nets whose curve is shown (see <a href="#curvelist">Curve list</a>), columns = |Z| at 1, 10, 100 MHz in the current unit.</td></tr>
 </table>
+
+<h2><a name="curvelist"></a>Curve list (All PWRs tab)</h2>
+<p>The <b>All PWRs</b> tab draws one curve per computed net and lists them in a panel to the right of the plot,
+in the order of the PWR Nets table. Every row has a check box, a colour swatch matching the curve and the net
+name (long names are shortened – the tool tip shows the full name). Unticking a row hides its curve (and its
+plane-only curve and markers) immediately and removes the net from the readout table; ticking it brings it back.
+Drag the splitter handle between plot and list to make the list wider, narrower or to hide it completely; its
+width is remembered, as is which curves you hid.</p>
+<table border="1" cellspacing="0" cellpadding="4" width="100%">
+<tr><th width="24%">Control</th><th>What it does</th></tr>
+<tr><td>Filter box</td><td>Type a part of a net name (upper/lower case does not matter) to list only the matching
+rows – handy with dozens of nets. Filtering only <i>lists</i> rows; it never ticks or unticks anything, so curves
+hidden by a filter stay in the plot.</td></tr>
+<tr><td>Selecting rows</td><td>Click a row to select it, Ctrl+click to add one, Shift+click for a range. Press
+<b>Space</b> to tick or untick every selected row together (they all follow the row you last clicked).</td></tr>
+<tr><td><b>All</b> / <b>None</b></td><td>Show or hide every curve.</td></tr>
+<tr><td><b>Invert</b></td><td>Show what was hidden and hide what was shown.</td></tr>
+<tr><td><b>Only selected</b></td><td>Show the selected rows and hide all others.</td></tr>
+<tr><td>Right-click</td><td>The same four commands as a context menu on the list.</td></tr>
+</table>
+<p>Because the list already names every curve with its colour, the legend inside the plot is switched off by
+default (<b>View ▸ Show Plot Legend</b> brings it back; with many nets it would cover the curves). Exported
+images always contain the legend.</p>
+<p>The per-PWR tabs always show their own curve; the curve list belongs to the All PWRs tab only. Hidden curves
+are also left out of the exported <code>All_PWRs</code> image (<b>All Plots…</b>), so you can export exactly the
+comparison you see.</p>
 
 <h2><a name="interaction"></a>Zoom, pan and reset</h2>
 <table border="1" cellspacing="0" cellpadding="4">
@@ -53,12 +79,16 @@ readout table. This page explains how to read and use them, how to set the sweep
 <tr><td>More options</td><td>Right-click for the context menu (Reset view, View All, axis ranges, export)</td></tr>
 <tr><td>Reset view</td><td><b>⟲ Reset view</b> button above the plot tabs, <b>View ▸ Reset View</b>, <b>Ctrl+D</b> (also Ctrl+0), or right-click ▸ Reset view</td></tr>
 </table>
-<p><b>Reset view</b> restores the default view that a fresh computation shows: both axes logarithmic, the range
-fitted to all <i>visible</i> curves with the standard small margin, and the markers shown or hidden as set under
-<b>View ▸ Show Markers</b>. The context-menu entry <b>View All</b> does the same. In the default view the plot
-keeps fitting itself automatically, e.g. when you hide a curve in the <i>All PWRs</i> tab or switch the |Z| unit;
-once you pan or zoom, the view stays where you put it (a unit switch only rescales the vertical range) until the
-next Reset view.</p>
+<p><b>Reset view</b> restores the default view that a fresh computation shows: both axes logarithmic, the
+frequency axis over the whole sweep, the |Z| axis over the minimum and maximum of the <i>visible</i> curves only
+(plus the plane-only curves when these are shown) with the standard small margin, and the markers shown or hidden
+as set under <b>View ▸ Show Markers</b>. Hidden curves never widen the range, so after hiding all but one net the
+reset zooms in on that net; if you hide every curve, the range falls back to all of them. The context-menu entry
+<b>View All</b> does the same.</p>
+<p>As long as you have not panned or zoomed, the plot keeps fitting itself: hiding or showing a curve in the
+<i>All PWRs</i> tab or switching the |Z| unit re-fits it at once. The first pan or zoom freezes the view – from
+then on, hiding curves leaves it exactly where you put it (a unit switch only rescales the vertical range) until
+the next Reset view.</p>
 <p>The zoom state of each plot is remembered by the auto-save and restored with the next start.</p>
 <table border="0" cellspacing="0" cellpadding="8" width="100%">
 <tr><td class="note"><b>Shortcut change.</b> Ctrl+D now resets the plot view everywhere in the application;

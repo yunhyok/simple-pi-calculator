@@ -42,9 +42,10 @@ def _session(tmp_path: Path) -> Session:
         recent_files=[str(tmp_path / "board.spical.json").replace("\\", "/")],
         window=WindowState(geometry_b64="AdnQyw==", state_b64="AAAA/w==", splitter_sizes=[440, 660],
                            input_tab=3, result_tab="VDD", decap_filter="VDD",
-                           message_dock_visible=False),
+                           message_dock_visible=False, curve_panel_width=180),
         plots={"VDD": PlotView(auto_range=False, x_range_log10=(5.0, 9.0),
                                y_range_log10=(-0.2, 3.5))},
+        hidden_curves=["VDD"],
         had_results=True,
     )
 

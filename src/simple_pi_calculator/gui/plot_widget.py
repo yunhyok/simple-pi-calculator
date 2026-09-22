@@ -120,10 +120,15 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         self._marker_texts_enabled = marker_texts
         self._show_plane_only = False
         self._show_markers = True
+        self._show_legend = True
         self._series: dict[str, _Series] = {}
         self._results: list[Any] = []
         self._colors: list[str] = []
         self._programmatic = 0
+        # "fresh" view = fitted to the visible curves and not zoomed/panned by the user since
+        # (§5.6): visibility and unit changes re-fit only while it is fresh.
+        self._view_fresh = True
+        self._fitted_range: tuple[tuple[float, float], tuple[float, float]] | None = None
 
         self.readout = pg.LabelItem(justify="left")
         self.readout.setText(" ")
@@ -159,10 +164,13 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         self._update_title()
         self.vb.sigRangeChangedManually.connect(self._on_manual_range)
         self.vb.sigStateChanged.connect(self._on_state_changed)
+        # the padding is size-dependent, so a resize re-fits the (still fresh) default view
+        self.vb.sigResized.connect(lambda *_: self._refit_if_fresh())
         self._mouse_proxy = pg.SignalProxy(self.scene().sigMouseMoved, rateLimit=30,
                                            slot=self._on_move)
         self._last_auto = tuple(self.vb.autoRangeEnabled())
         self.vb.setRange(xRange=(5, 9), yRange=(-1, 3), padding=0)
+        self._fitted_range = ((5.0, 9.0), (-1.0, 3.0))
         self._install_reset_view_menu()
 
     # -- data -------------------------------------------------------------------------------------
@@ -245,6 +253,7 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
             self._results = list(results)
             self._colors = [colors[i] if colors is not None and i < len(colors)
                             else series_color(i) for i in range(len(results))]
+            self._rebuild_legend()
             self._update_markers()
             self._apply_default_view()
         finally:
@@ -255,6 +264,18 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
             self.legend.removeItem(item)
         except Exception:  # noqa: BLE001
             pass
+
+    def _rebuild_legend(self) -> None:
+        """Legend entries in series order for the **visible** curves only (a hidden curve would
+        otherwise keep an empty row in the legend)."""
+        self.legend.clear()
+        for s in self._series.values():
+            if s.curve is None or not s.visible:
+                continue
+            self.legend.addItem(s.curve, s.name)
+            if s.plane_curve is not None and self._show_plane_only:
+                self.legend.addItem(s.plane_curve, f"{s.name} plane only")
+        self.legend.setVisible(bool(self._show_legend))
 
     def _scaled(self, abs_z: np.ndarray) -> np.ndarray:
         return np.maximum(abs_z, Z_PLOT_FLOOR_OHM) * self.scale
@@ -282,7 +303,8 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
 
     # -- display options --------------------------------------------------------------------------
     def set_unit(self, unit: str) -> None:
-        """Rescale without recompute; X range kept, Y range shifted by log10(s_new/s_old)."""
+        """Rescale without recompute; in the fresh (default) view the range is re-fitted, after a
+        manual zoom the X range is kept and the Y range shifted by log10(s_new/s_old)."""
         if unit == self._unit:
             return
         old = self.scale
@@ -290,7 +312,7 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         new = self.scale
         self._programmatic += 1
         try:
-            auto_y = bool(self.vb.autoRangeEnabled()[1])
+            fresh = self.is_default_view()
             (x0, x1), (y0, y1) = self.vb.viewRange()
             for s in self._series.values():
                 if s.curve is not None:
@@ -299,7 +321,9 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                     s.plane_curve.setData(s.f_hz, self._scaled(s.abs_plane))
             self._update_markers()
             self._update_axis_label()
-            if not auto_y:
+            if fresh:
+                self._apply_default_view()
+            else:
                 shift = math.log10(new / old)
                 self.vb.setXRange(x0, x1, padding=0)
                 self.vb.setYRange(y0 + shift, y1 + shift, padding=0)
@@ -312,11 +336,9 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         for s in self._series.values():
             if s.plane_curve is None:
                 continue
-            show = self._show_plane_only and s.visible
-            s.plane_curve.setVisible(bool(show))
-            self._legend_remove(s.plane_curve)
-            if self._show_plane_only:
-                self.legend.addItem(s.plane_curve, f"{s.name} plane only")
+            s.plane_curve.setVisible(bool(self._show_plane_only and s.visible))
+        self._rebuild_legend()
+        self._refit_if_fresh()
 
     def set_markers_visible(self, visible: bool) -> None:
         self._show_markers = bool(visible)
@@ -330,6 +352,15 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
     def markers_visible(self) -> bool:
         return self._show_markers
 
+    def set_legend_visible(self, visible: bool) -> None:
+        """Show or hide the in-plot legend (View ▸ Show Plot Legend, §5.5); with the curve list
+        beside the *All PWRs* plot it is redundant on screen, so it is off by default."""
+        self._show_legend = bool(visible)
+        self.legend.setVisible(self._show_legend)
+
+    def legend_visible(self) -> bool:
+        return self._show_legend
+
     def set_curve_visible(self, name: str, visible: bool) -> None:
         s = self._series.get(name)
         if s is None:
@@ -339,7 +370,9 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
             s.curve.setVisible(bool(s.visible))
         if s.plane_curve is not None:
             s.plane_curve.setVisible(bool(s.visible and self._show_plane_only))
+        self._rebuild_legend()
         self._update_markers()
+        self._refit_if_fresh()
 
     def is_curve_visible(self, name: str) -> bool:
         s = self._series.get(name)
@@ -389,13 +422,78 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                 view_all.triggered.disconnect()
             view_all.triggered.connect(lambda _checked=False: self.reset_view())
 
+    def data_bounds(self, only_visible: bool = True
+                    ) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """log10 bounds ``((x0, x1), (y0, y1))`` of the curve data — the sweep in x and |Z| in the
+        current unit in y — over the visible curves (plus the visible plane-only curves) or over
+        all curves. ``None`` when there is no data. Markers are vertical lines / points on the
+        curves and never widen the bounds."""
+        x_lo, x_hi, y_lo, y_hi = math.inf, -math.inf, math.inf, -math.inf
+        for s in self._series.values():
+            if only_visible and not s.visible:
+                continue
+            f = np.asarray(s.f_hz, dtype=float)
+            f = f[np.isfinite(f) & (f > 0.0)]
+            if f.size == 0:
+                continue
+            x_lo = min(x_lo, float(np.log10(f.min())))
+            x_hi = max(x_hi, float(np.log10(f.max())))
+            arrays = [self._scaled(s.abs_z)]
+            if s.abs_plane is not None and self._show_plane_only:
+                arrays.append(self._scaled(s.abs_plane))
+            for values in arrays:
+                v = np.asarray(values, dtype=float)
+                v = v[np.isfinite(v) & (v > 0.0)]
+                if v.size == 0:
+                    continue
+                y_lo = min(y_lo, float(np.log10(v.min())))
+                y_hi = max(y_hi, float(np.log10(v.max())))
+        if not (math.isfinite(x_lo) and math.isfinite(x_hi)
+                and math.isfinite(y_lo) and math.isfinite(y_hi)):
+            return None
+        return (x_lo, x_hi), (y_lo, y_hi)
+
+    def fit_range(self) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """The default view range: :meth:`data_bounds` of the visible curves (all curves when
+        nothing is visible) plus the standard padding (2 … 5 % of the span, size-dependent)."""
+        bounds = self.data_bounds(only_visible=True)
+        if bounds is None:
+            bounds = self.data_bounds(only_visible=False)
+        if bounds is None:
+            return None
+        (x0, x1), (y0, y1) = bounds
+        if x1 - x0 < 1e-12:
+            x0, x1 = x0 - 0.5, x1 + 0.5
+        if y1 - y0 < 1e-12:
+            y0, y1 = y0 - 0.5, y1 + 0.5
+        px = min(max(float(self.vb.suggestPadding(0)), 0.02), 0.05)
+        py = min(max(float(self.vb.suggestPadding(1)), 0.02), 0.05)
+        wx, wy = x1 - x0, y1 - y0
+        return (x0 - wx * px, x1 + wx * px), (y0 - wy * py, y1 + wy * py)
+
     def _apply_default_view(self) -> None:
-        """The default view of a fresh compute: log–log axes, range fitted to the data of the
-        visible curves with pyqtgraph's standard (size-dependent) padding, auto-range left enabled
-        so later visibility / unit changes re-fit."""
+        """The default view of a fresh compute: log–log axes and the range explicitly fitted to
+        the **visible** curves (:meth:`fit_range`) with auto-range switched off, so hidden curves
+        can never widen the view and pyqtgraph cannot re-fit behind our back (§5.6)."""
         self.plot.setLogMode(x=True, y=True)
-        self.vb.autoRange()
-        self.vb.enableAutoRange(x=True, y=True)
+        self.vb.disableAutoRange()
+        rng = self.fit_range()
+        if rng is not None:
+            (x0, x1), (y0, y1) = rng
+            self.vb.setRange(xRange=(x0, x1), yRange=(y0, y1), padding=0)
+            self._fitted_range = ((x0, x1), (y0, y1))
+        self._view_fresh = True
+
+    def _refit_if_fresh(self) -> None:
+        """Re-fit after a visibility / plane-only / unit change, but only while the view is still
+        the fitted one — a manual zoom or pan is never overruled."""
+        if not self.is_default_view():
+            return
+        self._programmatic += 1
+        try:
+            self._apply_default_view()
+        finally:
+            self._programmatic -= 1
 
     def reset_view(self) -> None:
         """Restore the default view (toolbar "Reset view", Ctrl+D, context menu, "View All")."""
@@ -411,28 +509,25 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
         """Backwards-compatible alias of :meth:`reset_view`."""
         self.reset_view()
 
+    def view_is_fresh(self) -> bool:
+        """``True`` while the user has not zoomed or panned since the last fit (§5.6)."""
+        return bool(self._view_fresh)
+
     def is_default_view(self, tol: float = 1e-9) -> bool:
-        """``True`` when auto-range is on for both axes and the range equals the fitted range."""
-        if not all(self.vb.autoRangeEnabled()):
+        """``True`` when the view is still the fitted default view: not manually zoomed or panned
+        and the range equal to the one :meth:`_apply_default_view` last set."""
+        if not self._view_fresh or self._fitted_range is None:
             return False
-        if getattr(self.vb, "_autoRangeNeedsUpdate", False):
-            self.vb.updateAutoRange()
-        bounds = self.vb.childrenBoundingRect()
-        if bounds is None:
-            return True
         (x0, x1), (y0, y1) = self.vb.viewRange()
-        px, py = self.vb.suggestPadding(0), self.vb.suggestPadding(1)
-        wx, wy = bounds.width(), bounds.height()
-        exp_x = (bounds.left() - wx * px, bounds.right() + wx * px)
-        exp_y = (bounds.top() - wy * py, bounds.bottom() + wy * py)
-        tx, ty = tol + 1e-6 * abs(wx), tol + 1e-6 * abs(wy)
-        return (abs(x0 - exp_x[0]) <= tx and abs(x1 - exp_x[1]) <= tx
-                and abs(y0 - exp_y[0]) <= ty and abs(y1 - exp_y[1]) <= ty)
+        (fx0, fx1), (fy0, fy1) = self._fitted_range
+        tx = tol + 1e-6 * abs(fx1 - fx0)
+        ty = tol + 1e-6 * abs(fy1 - fy0)
+        return (abs(x0 - fx0) <= tx and abs(x1 - fx1) <= tx
+                and abs(y0 - fy0) <= ty and abs(y1 - fy1) <= ty)
 
     def view_state(self) -> PlotView:
-        auto = self.vb.autoRangeEnabled()
         (x0, x1), (y0, y1) = self.vb.viewRange()
-        return PlotView(auto_range=bool(auto[0] and auto[1]),
+        return PlotView(auto_range=self.is_default_view(),
                         x_range_log10=(float(x0), float(x1)),
                         y_range_log10=(float(y0), float(y1)))
 
@@ -445,10 +540,14 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                 self.vb.disableAutoRange()
                 self.vb.setRange(xRange=view.x_range_log10, yRange=view.y_range_log10,
                                  padding=0)
+                self._view_fresh = False
         finally:
             self._programmatic -= 1
 
     def _on_manual_range(self, *_args) -> None:
+        """Any mouse zoom / pan (``sigRangeChangedManually``) makes the view "not fresh", so it is
+        no longer re-fitted when curves are hidden or the unit changes."""
+        self._view_fresh = False
         if not self._programmatic:
             self.viewChanged.emit()
 
@@ -511,6 +610,8 @@ class ImpedancePlot(pg.GraphicsLayoutWidget):
                              marker_texts=self._marker_texts_enabled)
         twin._show_markers = self._show_markers
         twin._show_plane_only = self._show_plane_only
+        # an exported image has no curve list beside it, so it always carries the legend
+        twin._show_legend = True
         twin._stale = self._stale
         twin._update_title()
         twin.ci.removeItem(twin.readout)

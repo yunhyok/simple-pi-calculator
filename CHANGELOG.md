@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-09-22
+
+### Results
+- **Curve list in the All PWRs tab** replaces the row of check boxes above the plot: a panel to the right of the plot (splitter, ~220 px, collapsible, width remembered) with a filter box ("Filter PWRs…", case-insensitive substring; filtering hides rows without changing what is shown), one row per PWR in table order with check box, curve-colour swatch and elided name (tool tip = full name), multi-selection with **Space** to toggle all selected rows, and **All / None / Invert / Only selected** as buttons and as a right-click menu. Hiding a curve also removes that net from the marker readout table. Which curves are hidden and how wide the panel is are stored in the auto-save (`session.hidden_curves`, `session.window.curve_panel_width`) and survive a recompute and a restart; per-PWR tabs are unchanged.
+- **Reset view fits the visible curves only.** The default view is now computed explicitly — frequency over the sweep, |Z| over the minimum and maximum of the visible curves (and their plane-only curves) with 2–5 % padding — instead of relying on pyqtgraph's auto-range, which also saw hidden items. With nothing visible it falls back to all curves. Triggers are unchanged (⟲ Reset view, View ▸ Reset View, Ctrl+D / Ctrl+0, context menu, "View All") and per-PWR tabs use the same routine.
+- Hiding or showing a curve, switching the |Z| unit or resizing the plot re-fits the view only while it is still the fitted one; the first pan or zoom freezes it until the next Reset view.
+- Exported plot images (All Plots…) keep following the curve visibility, now with the same visible-curve fit.
+- The plot legend lists the visible curves only (a hidden curve used to leave an empty legend row) and is hidden on screen by default: the new **View ▸ Show Plot Legend** turns it back on (remembered between sessions). Exported plot images always include the legend, since they have no curve list beside them.
+
 ## 0.3.1 — 2026-09-16
 
 - Fixed: the main splitter could not widen the input panel past the width of the "Curves" checkbox row; the row now wraps, the readout table scrolls, and the results pane has a 320 px minimum.

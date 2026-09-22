@@ -8,27 +8,29 @@ import os
 import sys
 from typing import Any, Sequence
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, QThread, QTimer, QUrl, Qt, \
+from PySide6.QtCore import QEvent, QObject, QThread, QTimer, QUrl, Qt, \
     Signal
-from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, QGuiApplication, \
-    QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, \
+    QGuiApplication, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QAbstractItemView,
     QAbstractSpinBox,
     QApplication,
-    QCheckBox,
     QLineEdit,
     QDialog,
     QFileDialog,
+    QGridLayout,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLayout,
     QMainWindow,
     QMessageBox,
     QProgressBar,
+    QPushButton,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -135,78 +137,9 @@ def tab_for_issue(issue: Issue) -> int | None:
 RESULTS_PANE_MIN_WIDTH = 320
 
 
-class FlowLayout(QLayout):
-    """Left-to-right layout that wraps onto further rows (Qt "flow layout" example).
-
-    Its minimum width is that of the widest item (capped), so a long list of widgets never forces
-    the parent wider than that; an item wider than the row is narrowed to the row."""
-
-    MIN_ITEM_WIDTH = 120
-
-    def __init__(self, parent: QWidget | None = None, spacing: int = 6):
-        super().__init__(parent)
-        self._items: list = []
-        self._spacing = spacing
-        self.setContentsMargins(0, 0, 0, 0)
-
-    def addItem(self, item) -> None:  # noqa: N802
-        self._items.append(item)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int):  # noqa: N802
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int):  # noqa: N802
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def expandingDirections(self) -> Qt.Orientation:  # noqa: N802
-        return Qt.Orientation(0)
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self._do_layout(QRect(0, 0, width, 0), apply=False)
-
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
-        super().setGeometry(rect)
-        self._do_layout(rect, apply=True)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return self.minimumSize()
-
-    def minimumSize(self) -> QSize:  # noqa: N802
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        # items wider than the row are narrowed in _do_layout, so the layout never needs to be
-        # wider than MIN_ITEM_WIDTH (QCheckBox reports its full text width as its minimum,
-        # which with large fonts / long names would again pin the pane wide)
-        size.setWidth(min(size.width(), self.MIN_ITEM_WIDTH))
-        m = self.contentsMargins()
-        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
-
-    def _do_layout(self, rect: QRect, apply: bool) -> int:
-        m = self.contentsMargins()
-        area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
-        x, y, line_h = area.x(), area.y(), 0
-        for item in self._items:
-            if item.isEmpty():
-                continue
-            hint = item.sizeHint()
-            if area.width() > 0 and hint.width() > area.width():
-                # a single item wider than the row (long name / large font) is narrowed to the
-                # row instead of overflowing it; callers put the full text in a tool tip
-                hint.setWidth(area.width())
-            if x > area.x() and x + hint.width() > area.right() + 1:
-                x, y, line_h = area.x(), y + line_h + self._spacing, 0
-            if apply:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x += hint.width() + self._spacing
-            line_h = max(line_h, hint.height())
-        return y + line_h - rect.y() + m.bottom()
+#: Default and smallest width of the curve list next to the All PWRs plot (§5.5).
+CURVE_PANEL_DEFAULT_WIDTH = 220
+CURVE_PANEL_MIN_WIDTH = 110
 
 
 class _ReadoutColumns(QObject):
@@ -245,36 +178,252 @@ class _ReadoutColumns(QObject):
             header.resizeSection(col, max(wanted, share))
 
 
+def color_swatch(color: str, size: int = 12) -> QIcon:
+    """Small filled square in the curve colour, used as the list-row icon."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(color))
+    return QIcon(pixmap)
+
+
+class CurveList(QListWidget):
+    """Curve rows; Space toggles **every** selected row (Qt would toggle only the current one)."""
+
+    spacePressed = Signal()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if (event.key() in (Qt.Key.Key_Space, Qt.Key.Key_Select)
+                and event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            self.spacePressed.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class CurveListPanel(QWidget):
+    """Curve list next to the All PWRs plot (§5.5): filter box, one checkable row per PWR with a
+    colour swatch, and All / None / Invert / Only selected (buttons and context menu)."""
+
+    visibilityChanged = Signal()
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._items: dict[str, QListWidgetItem] = {}
+        self._updating = 0
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 0, 0, 0)
+        layout.setSpacing(4)
+        self.title = QLabel("Curves", self)
+        self.title.setStyleSheet("QLabel { font-weight: bold; }")
+        layout.addWidget(self.title)
+        self.search = QLineEdit(self)
+        self.search.setPlaceholderText("Filter PWRs…")
+        self.search.setClearButtonEnabled(True)
+        self.search.setToolTip("Show only the rows whose PWR name contains this text "
+                               "(the check marks are not changed)")
+        self.search.textChanged.connect(self.set_filter)
+        layout.addWidget(self.search)
+        self.list = CurveList(self)
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list.setUniformItemSizes(True)
+        self.list.setAlternatingRowColors(True)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self._show_context_menu)
+        self.list.itemChanged.connect(self._on_item_changed)
+        self.list.spacePressed.connect(self.toggle_selected)
+        layout.addWidget(self.list, 1)
+
+        self.actions_: dict[str, QAction] = {}
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(4)
+        specs = (("All", "Show every PWR curve", self.check_all),
+                 ("None", "Hide every PWR curve", self.check_none),
+                 ("Invert", "Invert the check marks", self.invert),
+                 ("Only selected", "Show only the selected rows", self.only_selected))
+        self.buttons: dict[str, QPushButton] = {}
+        for i, (text, tip, slot) in enumerate(specs):
+            button = QPushButton(text, self)
+            button.setToolTip(tip)
+            button.setAutoDefault(False)
+            button.clicked.connect(lambda _checked=False, s=slot: s())
+            grid.addWidget(button, i // 2, i % 2)
+            self.buttons[text] = button
+            act = QAction(text, self)
+            act.setToolTip(tip)
+            act.triggered.connect(lambda _checked=False, s=slot: s())
+            self.actions_[text] = act
+        layout.addLayout(grid)
+        self.setMinimumWidth(CURVE_PANEL_MIN_WIDTH)
+
+    # -- content ----------------------------------------------------------------------------
+    def set_names(self, names: Sequence[str], hidden: Sequence[str] = ()) -> None:
+        """One row per PWR in table order; rows named in ``hidden`` start unchecked."""
+        hidden_set = set(hidden)
+        self._updating += 1
+        try:
+            self.list.clear()
+            self._items.clear()
+            for i, name in enumerate(names):
+                item = QListWidgetItem(name, self.list)
+                item.setIcon(color_swatch(series_color(i)))
+                item.setToolTip(name)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                              | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(Qt.CheckState.Unchecked if name in hidden_set
+                                   else Qt.CheckState.Checked)
+                self._items[name] = item
+            self.set_filter(self.search.text())
+        finally:
+            self._updating -= 1
+
+    def names(self) -> list[str]:
+        return list(self._items)
+
+    def is_checked(self, name: str) -> bool:
+        item = self._items.get(name)
+        return item is not None and item.checkState() == Qt.CheckState.Checked
+
+    def visible_names(self) -> list[str]:
+        return [n for n in self._items if self.is_checked(n)]
+
+    def hidden_names(self) -> list[str]:
+        return [n for n in self._items if not self.is_checked(n)]
+
+    def rows_shown(self) -> list[str]:
+        """Names of the rows the filter leaves visible (independent of the check marks)."""
+        return [n for n, item in self._items.items() if not item.isHidden()]
+
+    # -- filter -----------------------------------------------------------------------------
+    def set_filter(self, text: str) -> None:
+        """Case-insensitive substring filter; hiding a row never changes its check state."""
+        needle = (text or "").strip().lower()
+        for name, item in self._items.items():
+            item.setHidden(bool(needle) and needle not in name.lower())
+
+    # -- check-state operations ----------------------------------------------------------------
+    def set_checked(self, name: str, checked: bool) -> None:
+        item = self._items.get(name)
+        if item is None:
+            return
+        item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+
+    def _set_many(self, states: dict[str, bool]) -> None:
+        changed = False
+        self._updating += 1
+        try:
+            for name, checked in states.items():
+                item = self._items.get(name)
+                if item is None or self.is_checked(name) == bool(checked):
+                    continue
+                item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+                changed = True
+        finally:
+            self._updating -= 1
+        if changed:
+            self.visibilityChanged.emit()
+
+    def check_all(self) -> None:
+        self._set_many({n: True for n in self._items})
+
+    def check_none(self) -> None:
+        self._set_many({n: False for n in self._items})
+
+    def invert(self) -> None:
+        self._set_many({n: not self.is_checked(n) for n in self._items})
+
+    def selected_names(self) -> list[str]:
+        return [item.text() for item in self.list.selectedItems()]
+
+    def only_selected(self) -> None:
+        """Show only the selected rows (nothing selected: leave the check marks alone)."""
+        selected = set(self.selected_names())
+        if not selected:
+            return
+        self._set_many({n: n in selected for n in self._items})
+
+    def toggle_selected(self) -> None:
+        """Space: toggle all selected rows together, following the current row's state."""
+        names = self.selected_names()
+        if not names:
+            current = self.list.currentItem()
+            if current is None or current.isHidden():
+                return
+            names = [current.text()]
+        current = self.list.currentItem()
+        anchor = current.text() if current is not None and current.text() in names else names[0]
+        target = not self.is_checked(anchor)
+        self._set_many({n: target for n in names})
+
+    # -- signals ---------------------------------------------------------------------------------
+    def _on_item_changed(self, _item: QListWidgetItem) -> None:
+        if not self._updating:
+            self.visibilityChanged.emit()
+
+    def _show_context_menu(self, pos) -> None:
+        menu = QMenu(self.list)
+        for act in self.actions_.values():
+            menu.addAction(act)
+        menu.exec(self.list.viewport().mapToGlobal(pos))
+
+
 class OverviewPanel(QWidget):
-    """Combined plot (one curve per PWR) with per-curve visibility check boxes."""
+    """Combined plot (one curve per PWR) beside a collapsible curve list (§5.5)."""
+
+    visibilityChanged = Signal()
 
     def __init__(self, plot: ImpedancePlot, parent: QWidget | None = None):
         super().__init__(parent)
         self.plot = plot
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        # The check boxes wrap onto further rows: a single QHBoxLayout made the minimum width
-        # of the whole results pane the sum of all PWR names, which blocked the main splitter.
-        self.checks_row = FlowLayout()
-        self.checks_row.addWidget(QLabel("Curves:", self))
-        layout.addLayout(self.checks_row)
-        layout.addWidget(plot, 1)
-        self.checks: dict[str, QCheckBox] = {}
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.splitter.setObjectName("OverviewSplitter")
+        self.curve_list = CurveListPanel(self.splitter)
+        self.splitter.addWidget(plot)
+        self.splitter.addWidget(self.curve_list)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, True)  # drag the handle right to hide the list
+        self.splitter.setSizes([600, CURVE_PANEL_DEFAULT_WIDTH])
+        layout.addWidget(self.splitter, 1)
+        self.curve_list.visibilityChanged.connect(self._apply_visibility)
 
-    def set_names(self, names: Sequence[str]) -> None:
-        for box in self.checks.values():
-            self.checks_row.removeWidget(box)
-            box.deleteLater()
-        self.checks.clear()
-        for i, name in enumerate(names):
-            box = QCheckBox(name, self)
-            box.setToolTip(name)
-            box.setChecked(True)
-            box.setStyleSheet(f"QCheckBox {{ color: {series_color(i)}; font-weight: bold; }}")
-            box.toggled.connect(lambda on, n=name: self.plot.set_curve_visible(n, on))
-            self.checks_row.addWidget(box)
-            self.checks[name] = box
-        self.checks_row.invalidate()
+    # -- curve list ------------------------------------------------------------------------------
+    def set_names(self, names: Sequence[str], hidden: Sequence[str] = ()) -> None:
+        self.curve_list.set_names(names, hidden)
+        self._apply_visibility(emit=False)
+
+    def _apply_visibility(self, emit: bool = True) -> None:
+        for name in self.curve_list.names():
+            self.plot.set_curve_visible(name, self.curve_list.is_checked(name))
+        if emit:
+            self.visibilityChanged.emit()
+
+    def visible_names(self) -> list[str]:
+        return self.curve_list.visible_names()
+
+    def hidden_names(self) -> list[str]:
+        return self.curve_list.hidden_names()
+
+    def is_visible(self, name: str) -> bool:
+        """``True`` for a PWR that is checked or not listed at all (per-PWR tabs)."""
+        return name not in self.curve_list.names() or self.curve_list.is_checked(name)
+
+    def set_curve_checked(self, name: str, checked: bool) -> None:
+        self.curve_list.set_checked(name, checked)
+
+    # -- panel width -----------------------------------------------------------------------------
+    def panel_width(self) -> int:
+        sizes = self.splitter.sizes()
+        return int(sizes[1]) if len(sizes) == 2 else CURVE_PANEL_DEFAULT_WIDTH
+
+    def set_panel_width(self, width: int) -> None:
+        width = max(0, int(width))
+        total = sum(self.splitter.sizes()) or (600 + CURVE_PANEL_DEFAULT_WIDTH)
+        self.splitter.setSizes([max(0, total - width), width])
 
 
 class MainWindow(QMainWindow):
@@ -301,6 +450,7 @@ class MainWindow(QMainWindow):
         self._thread: QThread | None = None
         self._worker: ComputeWorker | None = None
         self._pending_views: dict[str, PlotView] = {}
+        self._pending_hidden: list[str] = []
         self._csv_per_pwr = False
         self._touchstone_combined = False
         self._touchstone_options = TouchstoneOptions()
@@ -497,6 +647,13 @@ class MainWindow(QMainWindow):
         self.act_plane_only.toggled.connect(self._on_plane_only_action)
         self.act_markers = A("Show &Markers", self, checkable=True, checked=True)
         self.act_markers.toggled.connect(self.set_markers_visible)
+        # the curve list beside the All PWRs plot names the curves, so the in-plot legend (which
+        # overlaps the curves with many PWRs) is off by default; exported images always show it
+        self.act_legend = A("Show Plot &Legend", self, checkable=True, checked=False)
+        self.act_legend.setToolTip("Show the legend inside the plot (exported images always "
+                                   "include it)")
+        self.act_legend.toggled.connect(self.set_legend_visible)
+        self.set_legend_visible(False)
         self.act_reset_view = A("&Reset View", self, triggered=lambda: self.reset_view())
         self.act_reset_view.setShortcuts([QKeySequence(RESET_VIEW_SHORTCUT),
                                           QKeySequence("Ctrl+0")])
@@ -553,6 +710,7 @@ class MainWindow(QMainWindow):
             unit_menu.addAction(act)
         view.addAction(self.act_plane_only)
         view.addAction(self.act_markers)
+        view.addAction(self.act_legend)
         view.addAction(self.act_reset_view)
         view.addSeparator()
         view.addAction(self.act_messages)
@@ -618,6 +776,8 @@ class MainWindow(QMainWindow):
         self.splitter.splitterMoved.connect(lambda *_: self._schedule_autosave())
         self.message_dock.visibilityChanged.connect(lambda *_: self._schedule_autosave())
         self.overview_plot.viewChanged.connect(self._schedule_autosave)
+        self.overview.visibilityChanged.connect(self._on_curve_visibility_changed)
+        self.overview.splitter.splitterMoved.connect(lambda *_: self._schedule_autosave())
         app = QGuiApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._flush_autosave)
@@ -660,11 +820,18 @@ class MainWindow(QMainWindow):
         self.modified = modified
         self.clear_results()
         self._pending_views.clear()
+        self._pending_hidden = []
         self._load_project_into_ui()
         self._update_title()
 
     def _all_plots(self) -> list[ImpedancePlot]:
         return [self.overview_plot, *self.plots.values()]
+
+    def _on_curve_visibility_changed(self) -> None:
+        """A curve was (un)checked in the All PWRs curve list: the readout table follows the
+        visible PWRs and the state goes into the auto-save."""
+        self._update_readout_table()
+        self._schedule_autosave()
 
     def _schedule_autosave(self) -> None:
         if self.autosave is not None and not self._applying:
@@ -763,13 +930,16 @@ class MainWindow(QMainWindow):
             result_tab=self.current_result_name(),
             decap_filter=self.decap_panel.current_filter(),
             message_dock_visible=not self.message_dock.isHidden(),
+            curve_panel_width=int(self.overview.panel_width()),
         )
         plots = dict(self._pending_views)
         for name, plot in self.plots.items():
             plots[name] = plot.view_state()
+        hidden = self.overview.hidden_names() or list(self._pending_hidden)
         return Session(project_path=self.project_path, modified=bool(self.modified),
                        recent_files=list(self.recent_files[:MAX_RECENT_FILES]), window=window,
-                       plots=plots, had_results=bool(self.results) or (
+                       plots=plots, hidden_curves=hidden,
+                       had_results=bool(self.results) or (
                            self._had_results_restored and self.is_computing()))
 
     def apply_session(self, session: Session) -> None:
@@ -786,12 +956,15 @@ class MainWindow(QMainWindow):
             if 0 <= w.input_tab < self.input_tabs.count():
                 self.input_tabs.setCurrentIndex(w.input_tab)
             self.decap_panel.set_filter(w.decap_filter)
+            if w.curve_panel_width >= 0:
+                self.overview.set_panel_width(int(w.curve_panel_width))
             self.message_dock.setVisible(bool(w.message_dock_visible))
             self.recent_files = list(session.recent_files[:MAX_RECENT_FILES])
             self._rebuild_recent_menu()
             self.project_path = session.project_path
             self.modified = bool(session.modified)
             self._pending_views = dict(session.plots)
+            self._pending_hidden = [str(n) for n in session.hidden_curves]
             self._pending_result_tab = w.result_tab
             self._had_results_restored = bool(session.had_results)
             self._update_title()
@@ -851,6 +1024,10 @@ class MainWindow(QMainWindow):
             markers = settings.value("view/show_markers")
             if markers is not None:
                 self.act_markers.setChecked(str(markers).lower() in ("true", "1"))
+            legend = settings.value("view/show_legend")
+            if legend is not None:
+                self.act_legend.setChecked(str(legend).lower() in ("true", "1"))
+                self.set_legend_visible(self.act_legend.isChecked())
         except Exception:  # noqa: BLE001 - settings are a convenience only
             log.debug("could not restore QSettings", exc_info=True)
 
@@ -862,6 +1039,7 @@ class MainWindow(QMainWindow):
             settings.setValue("window/geometry", self.saveGeometry())
             settings.setValue("window/splitter", self.splitter.saveState())
             settings.setValue("view/show_markers", self.act_markers.isChecked())
+            settings.setValue("view/show_legend", self.act_legend.isChecked())
             settings.sync()
         except Exception:  # noqa: BLE001
             log.debug("could not write QSettings", exc_info=True)
@@ -1405,6 +1583,10 @@ class MainWindow(QMainWindow):
         for plot in self._all_plots():
             plot.set_markers_visible(visible)
 
+    def set_legend_visible(self, visible: bool) -> None:
+        for plot in self._all_plots():
+            plot.set_legend_visible(visible)
+
     def reset_view(self) -> None:
         """Default view of the visible plot (toolbar button, View ▸ Reset View, Ctrl+D)."""
         plot = self.current_plot()
@@ -1649,19 +1831,23 @@ class MainWindow(QMainWindow):
     def show_results(self, results: Sequence[Any]) -> None:
         views = {name: plot.view_state() for name, plot in self.plots.items()}
         views.update(self._pending_views)
+        # curve visibility survives a recompute and a restart (§4.7 session.hidden_curves)
+        hidden = set(self.overview.hidden_names()) | set(self._pending_hidden)
         current = self._pending_result_tab or self.current_result_name()
         self.clear_results()
         self.results = list(results)
         unit = self.project.display.z_unit
         plane = bool(self.project.sweep.show_plane_only)
         markers = self.act_markers.isChecked()
+        legend = self.act_legend.isChecked()
         good = [r for r in self.results if getattr(r, "z_pad", None) is not None]
         colors = [series_color(i) for i in range(len(good))]
         self.overview_plot.set_unit(unit)
         self.overview_plot.set_results(good, colors)
         self.overview_plot.set_plane_only_visible(plane)
         self.overview_plot.set_markers_visible(markers)
-        self.overview.set_names([r.name for r in good])
+        self.overview_plot.set_legend_visible(legend)
+        self.overview.set_names([r.name for r in good], sorted(hidden))
         self.result_tabs.blockSignals(True)
         try:
             color_of = {r.name: c for r, c in zip(good, colors)}
@@ -1673,6 +1859,7 @@ class MainWindow(QMainWindow):
                 plot.set_results([res], [color_of[res.name]])
                 plot.set_plane_only_visible(plane)
                 plot.set_markers_visible(markers)
+                plot.set_legend_visible(legend)
                 if res.name in views:
                     plot.apply_view_state(views[res.name])
                 plot.viewChanged.connect(self._schedule_autosave)
@@ -1694,6 +1881,7 @@ class MainWindow(QMainWindow):
         finally:
             self.result_tabs.blockSignals(False)
         self._pending_views.clear()
+        self._pending_hidden = []
         self._pending_result_tab = None
         self._update_readout_table()
         self._update_modes_label()
@@ -1772,10 +1960,11 @@ class MainWindow(QMainWindow):
                    for f in MARKER_FREQUENCIES_HZ]
         table.setColumnCount(len(headers))
         table.setHorizontalHeaderLabels(headers)
-        results = self._exportable_results()
-        values = self.readout_values()
-        table.setRowCount(len(results))
-        for r, (res, row) in enumerate(zip(results, values)):
+        # rows follow the curve list of the All PWRs tab: a PWR whose curve is hidden is left out
+        shown = [(res, row) for res, row in zip(self._exportable_results(), self.readout_values())
+                 if self.overview.is_visible(res.name)]
+        table.setRowCount(len(shown))
+        for r, (res, row) in enumerate(shown):
             table.setVerticalHeaderItem(r, QTableWidgetItem(res.name))
             for c, val in enumerate(row):
                 item = QTableWidgetItem("n/a" if val is None else format_sig(val, 4))

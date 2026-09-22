@@ -2,7 +2,7 @@
 
 | Item | Value |
 |---|---|
-| Document version | 1.5 — **decap distance distribution** (§2.5.5): `fixed` (default, 0.2.0 behaviour) or `normal` (per-via-set distances from a normal distribution truncated to ±1σ, seeded, reproducible); schema 4 `decaps.distance_mode`/`sigma_mm`/`seed` (§4.7, §5.8.4), cavity cache key and grouping note (§3.9), Decaps tab controls and preview tooltip (§5.5), `I_DIST_SAMPLED` and export headers (§4.8), Appendix D #15. 1.4.1 — review v0.2 fixes (docs/REVIEW-v0.2.md): decap model cache keyed by file content, rounding tolerance of the clipping/overlap warnings, `E_PWR_FAILED`, `W_EXPORT_SKIPPED`. 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
+| Document version | 1.6 — **curve list and visible-curve reset view** (0.4.0): the *All PWRs* tab gets a filterable, multi-selectable curve list right of the plot instead of the check-box row (§5.5), `session.hidden_curves` / `session.window.curve_panel_width` (§4.7), and the default view is fitted explicitly to the visible curves with pyqtgraph auto-range off (§5.6, §8.12). 1.5 — **decap distance distribution** (§2.5.5): `fixed` (default, 0.2.0 behaviour) or `normal` (per-via-set distances from a normal distribution truncated to ±1σ, seeded, reproducible); schema 4 `decaps.distance_mode`/`sigma_mm`/`seed` (§4.7, §5.8.4), cavity cache key and grouping note (§3.9), Decaps tab controls and preview tooltip (§5.5), `I_DIST_SAMPLED` and export headers (§4.8), Appendix D #15. 1.4.1 — review v0.2 fixes (docs/REVIEW-v0.2.md): decap model cache keyed by file content, rounding tolerance of the clipping/overlap warnings, `E_PWR_FAILED`, `W_EXPORT_SKIPPED`. 1.4 — **several observation pads per PWR net**: PWR list column `Number of PADs` N_pad (pad row at y = 0.2·D_ref, one via set of `pad_via_count` pairs per pad, pads joined at an ideal common node; schema 3, §2.5.1, §2.8, §4.3, §4.7). 1.3 — `vias_per_pad` (parallel vias on each decap pad) replaces `vias_per_decap`, schema 2 (§2.6.4, §4.7). 1.2 — physics review incorporated (via-pair loop inductance with via pitch, via length to plane surface, via-cluster port widths, robustness fixes; see Appendix C). 1.1: axial geometry, Top-side only, Dummy Cap, auto-save (baseline for v0.1.0) |
 | Status | Implementation-ready |
 | License of project | MIT |
 | Target platform | Windows 10/11 x64 (development also works on Linux/macOS) |
@@ -1493,7 +1493,9 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `session.window.result_tab` | str or null | PWR name of the visible plot tab |
 | `session.window.decap_filter` | str or null | decap table filter (PWR name, null = All) |
 | `session.window.message_dock_visible` | bool | |
-| `session.plots` | object PWR name → `{auto_range:bool, x_range_log10:[float,float], y_range_log10:[float,float]}` | y range stored for the current `display.z_unit` |
+| `session.window.curve_panel_width` | int | width in px of the curve list beside the *All PWRs* plot (§5.5); 0 = collapsed by the user, −1 or missing = the 220 px default |
+| `session.plots` | object PWR name → `{auto_range:bool, x_range_log10:[float,float], y_range_log10:[float,float]}` | `auto_range` = the plot is in the fitted default view (§5.6), the ranges are then re-fitted on restore; y range stored for the current `display.z_unit` |
+| `session.hidden_curves` | list[str] | PWR nets unticked in the curve list of the *All PWRs* tab (§5.5); names that no longer exist are ignored |
 | `session.had_results` | bool | results were shown when saved (triggers recompute on restore) |
 | `session.saved_utc` | str | ISO 8601 UTC timestamp |
 
@@ -1542,8 +1544,9 @@ Auto-save file = the same document with absolute paths and, appended:
     "recent_files": ["C:/Users/alice/Documents/board_a.spical.json"],
     "window": {"geometry_b64": "AdnQywADAAAAAA…", "state_b64": "AAAA/wAAAAD9…",
                "splitter_sizes": [440, 660], "input_tab": 3, "result_tab": "VDD_CORE",
-               "decap_filter": "VDD_CORE", "message_dock_visible": true},
+               "decap_filter": "VDD_CORE", "message_dock_visible": true, "curve_panel_width": 220},
     "plots": {"VDD_CORE": {"auto_range": false, "x_range_log10": [5.0, 9.0], "y_range_log10": [-0.2, 3.5]}},
+    "hidden_curves": ["VDD_IO"],
     "had_results": true,
     "saved_utc": "2026-09-15T10:00:00Z"
   }
@@ -2140,7 +2143,10 @@ minimum 1100 × 700.
   Plot PNG…), Show Auto-save Folder, Exit. Semantics: §5.8.5.
 * Compute: Run (F5), Cancel (Esc while running).
 * View: |Z| unit ▸ (Ω, mΩ, µΩ; exclusive QActionGroup), Show plane-only curve (checkable),
-  Reset zoom (Ctrl+0), Show Messages dock.
+  Show Markers (checkable), **Show Plot Legend** (checkable, default **off** — the curve list of
+  §5.5 names the curves and the in-plot legend would overlap them; stored in QSettings
+  `view/show_legend` like `view/show_markers`; exported images always carry the legend, §5.6),
+  Reset View (Ctrl+D, also Ctrl+0), Show Messages dock.
 * Help: Help Contents (F1), Open Help in Browser, Open Examples Folder, About, License.
 
 **Central widget:** horizontal `QSplitter`:
@@ -2192,7 +2198,27 @@ minimum 1100 × 700.
      `2.5MHz`), points spin box, "Show plane-only curve" check box.
 * **Right (results, ~60 %)**: `QTabWidget` with one `ImpedancePlot` per computed PWR (tab text =
   PWR name, red icon if that PWR failed), plus a `QTableWidget` readout table below
-  (rows = PWRs, columns = |Z| @ 1 MHz, 10 MHz, 100 MHz in the current unit, 4 significant digits).
+  (one row per PWR whose curve is shown, columns = |Z| @ 1 MHz, 10 MHz, 100 MHz in the current
+  unit, 4 significant digits).
+  The first tab, *All PWRs* (`OverviewPanel`), holds one curve per PWR and, in a horizontal
+  `QSplitter` to the **right** of the plot, the **curve list** (`CurveListPanel`, default width
+  `CURVE_PANEL_DEFAULT_WIDTH` = 220 px, minimum 110 px, collapsible by dragging the handle; the
+  width and the unticked nets are part of the session, §4.7):
+  * a `QLineEdit` filter at the top (placeholder "Filter PWRs…", clear button) hiding the rows
+    whose name does not contain the text (case-insensitive substring); filtering never changes a
+    check state, so a filtered-out curve keeps being drawn;
+  * a `QListWidget` (`CurveList`) in table order with one checkable row per PWR: check box
+    (checked = curve visible), colour swatch `QPixmap` in the curve colour, elided name with the
+    full name as tool tip; `ExtendedSelection`, and **Space** toggles *all* selected rows together
+    (they follow the current row), which `QListWidget` alone does not do;
+  * the buttons **All**, **None**, **Invert**, **Only selected** (2 × 2 grid) and the same four
+    commands as a right-click context menu on the list.
+  Toggling emits `OverviewPanel.visibilityChanged`: `ImpedancePlot.set_curve_visible` for every
+  net (curve, plane-only curve, markers and legend entry), the readout table is rebuilt from the
+  visible nets
+  and an auto-save is scheduled. The state survives a recompute and a restart; per-PWR tabs are
+  unaffected, and `make_export_copy` (§5.6) carries the visibility into exported images. (Before
+  0.4.0 this was a wrapping row of `QCheckBox` above the plot.)
 * **Bottom dock** `MessageDock`: `QTreeWidget` (Severity icon, Code, Message, Source, Location);
   double-click navigates to the relevant tab/row.
 * **Status bar**: progress bar, last-compute time, mode count info of current PWR.
@@ -2222,7 +2248,10 @@ on restore, §5.8.3).
   This is a common pitfall and MUST be followed.
 * Curves: `self.curve = self.plot.plot(f, abs_z_scaled, pen=pg.mkPen('#1f77b4', width=2),
   name="Z at PAD")`; plane-only `pen=pg.mkPen('#7f7f7f', width=1, style=Qt.DashLine)`.
-  `self.plot.addLegend(offset=(-10, 10))`.
+  `self.plot.addLegend(offset=(-10, 10))`; `_rebuild_legend()` refills it in series order with the
+  **visible** curves only and applies `set_legend_visible()` (View ▸ Show Plot Legend, off by
+  default, QSettings `view/show_legend`). `make_export_copy` forces `_show_legend = True`, so
+  exported images always show the legend — they have no curve list beside them.
 * Markers: for each marker frequency within range, `pg.InfiniteLine(angle=90, movable=False,
   pen=pg.mkPen('#d62728', width=1, style=Qt.DashLine), label='1 MHz',
   labelOpts={'position': 0.95, 'color': '#d62728'})`; a `pg.ScatterPlotItem` dot at the exact
@@ -2234,18 +2263,33 @@ on restore, §5.8.3).
 * Zoom/pan: default ViewBox mouse interaction (left-drag pan, wheel zoom, right-drag axis zoom);
   `ViewBox.setMouseMode(pg.ViewBox.PanMode)`; context menu kept. After first data set, call
   `vb.setLimits(xMin=log10(f_start)-0.5, xMax=log10(f_stop)+0.5)`.
-* **Default view / Reset view:** `_apply_default_view()` = `setLogMode(x=True, y=True)`,
-  `vb.autoRange()` (bounds of the *visible* items; marker lines, texts and cross-hair are
-  `ignoreBounds`; pyqtgraph's size-dependent default padding), then `vb.enableAutoRange()` so the
-  view keeps fitting on curve-visibility and unit changes. `set_results` ends with it, so a fresh
-  compute shows exactly the default view. `reset_view()` applies it, re-applies the marker
-  visibility setting and emits `viewChanged`. Triggers: results-toolbar button "⟲ Reset view",
-  View ▸ Reset View (`QAction`, shortcuts `Ctrl+D` and `Ctrl+0`,
-  `Qt.ApplicationShortcut`; Edit ▸ Duplicate Row moved to `Ctrl+Shift+D`), a "Reset view" entry
-  inserted at the top of the ViewBox context menu, and pyqtgraph's own "View All" entry, whose
-  `triggered` signal is re-connected to `reset_view`. `is_default_view()` checks auto-range on and
-  range == fitted range (tests). Unit switching: in the default view auto-range re-fits; after a
-  manual zoom X is kept and Y shifted (above).
+* **Default view / Reset view (explicit fit of the visible curves):** pyqtgraph's own auto-range
+  is **not** used — it fits whatever items the ViewBox holds, which made the *All PWRs* reset
+  depend on hidden items and on the marker dots. Instead:
+  * `data_bounds(only_visible)` → log10 bounds of the curve *data*: x = sweep f_min … f_max,
+    y = min … max of |Z| in the current unit over the visible curves plus their plane-only curves
+    when these are shown. Marker lines (vertical) and marker dots/texts never enter the bounds.
+  * `fit_range()` = those bounds of the visible curves (of **all** curves when nothing is visible)
+    plus the standard padding `clip(suggestPadding(axis), 0.02, 0.05)` of the span per side; a
+    degenerate (zero) span is widened by ±0.5 decades.
+  * `_apply_default_view()` = `setLogMode(x=True, y=True)`, `vb.disableAutoRange()`,
+    `vb.setRange(xRange=…, yRange=…, padding=0)`, remember the range in `_fitted_range` and set
+    `_view_fresh = True`. `set_results` ends with it, so a fresh compute shows the default view.
+  * **Freshness:** `sigRangeChangedManually` (every mouse pan / zoom / axis drag) clears
+    `_view_fresh`; `apply_view_state` of a stored non-default view clears it too. `_refit_if_fresh()`
+    re-applies the default view after a curve-visibility, plane-only, unit or widget-size change,
+    but only while `is_default_view()` (fresh **and** range still equal to `_fitted_range`), so a
+    manual zoom is never overruled. `view_is_fresh()` and `is_default_view()` are the test hooks;
+    `view_state().auto_range` = `is_default_view()`, i.e. a default view is restored by re-fitting
+    (§4.7) instead of by its stored numbers.
+  * `reset_view()` applies the default view, re-applies the marker visibility setting and emits
+    `viewChanged`. Triggers: results-toolbar button "⟲ Reset view",
+    View ▸ Reset View (`QAction`, shortcuts `Ctrl+D` and `Ctrl+0`,
+    `Qt.ApplicationShortcut`; Edit ▸ Duplicate Row moved to `Ctrl+Shift+D`), a "Reset view" entry
+    inserted at the top of the ViewBox context menu, and pyqtgraph's own "View All" entry, whose
+    `triggered` signal is re-connected to `reset_view`. Per-PWR tabs use the same routine (one
+    visible curve). Unit switching: in the fresh default view it re-fits; after a manual zoom X is
+    kept and Y shifted (above).
 * Plot state: `ViewBox.sigRangeChanged` and auto-range toggles emit `ImpedancePlot.viewChanged`,
   which schedules an auto-save; `view_state() -> PlotView` and `apply_view_state(PlotView)` convert
   to/from the `session.plots` entry.
@@ -2928,6 +2972,18 @@ Project files:
   worker, `finished` signal within 60 s, plot tabs == 2, readout table has 3 numeric columns.
 * Unit switch changes axis label text to `|Z| (µΩ)` and scales curve data by 1e3 relative to mΩ.
 * InfiniteLine positions equal log10(marker frequency).
+* **Curve list (§5.5):** rows in table order with swatch icon and full-name tool tip; the filter hides
+  rows without changing a check state; All / None / Invert / Only selected (buttons and the context-menu
+  actions) drive `ImpedancePlot.set_curve_visible`; multi-selection + Space toggles every selected row;
+  the readout table loses the row of a hidden PWR; the unticked nets and the panel width survive a
+  restart (`session.hidden_curves`, `session.window.curve_panel_width`).
+* **Reset view fits the visible curves only (§5.6, `test_export.py`):** with the larger of two curves
+  hidden, reset gives a y range that is the bounds of the remaining curve plus ≤ 5 % padding (the range
+  with both is more than 0.2 decades wider); with nothing visible it falls back to all curves; a per-PWR
+  tab yields the same range for the same single curve. While the view is fresh, toggling a curve or the
+  unit re-fits at once; after `sigRangeChangedManually` the range is unchanged by both, and Ctrl+D
+  re-fits it to the visible curves. `make_export_copy` keeps the visibility, so the exported All_PWRs
+  image excludes hidden curves.
 * Help window loads `index.html` without missing images (`QTextDocument` resource check for each
   `<img>`).
 * `--self-test` CLI returns exit code 0 and creates no files in `SPICAL_APPDATA_DIR`.
