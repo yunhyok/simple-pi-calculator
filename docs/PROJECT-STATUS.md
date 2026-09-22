@@ -1,4 +1,4 @@
-# Simple PI Calculator — 프로젝트 현황 (2026-09-15, v0.3.0)
+# Simple PI Calculator — 프로젝트 현황 (2026-09-22, v0.4.0)
 
 ## 목적
 PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR별 PDN 임피던스 |Z(f)|를 계산·표시하는 Windows 프로그램.
@@ -35,3 +35,7 @@ PCB/MLO stack-up(엑셀) + decap SPICE(.mod)/.s2p 모델 + via 설정으로 PWR�
 ## v0.3.0 (2026-09-15) 변경
 - Decaps 탭 전역 옵션 "Distance: Fixed / Normal (±1σ)": 각 via set의 거리를 행의 평균거리 D 중심, σ(mm, 기본 0.5) 절단정규분포(±1σ)에서 seed 기반 난수 추출(inverse-CDF, Acklam Φ⁻¹, numpy default_rng). Dummy Cap 행은 via set당 1 샘플. D_ref = max(D_k)+σ로 plane 높이는 seed와 무관. 프로젝트 스키마 4.
 - 리뷰(docs/REVIEW-v0.3.md): Φ⁻¹ 상위 꼬리 정밀도 수정, σ 필드가 다른 컨트롤 편집 시 반올림되던 GUI 버그 수정. σ=0.5 mm에서 seed 간 |Z| 편차 ≤1.5 %. 테스트 705 통과.
+
+## v0.3.1 / v0.4.0 (2026-09-16 / 09-22)
+- 0.3.1: splitter 최소폭 버그(Curves 행) 수정; metal 행 Dk/Df는 fill-in 물성 안내(I_STACK_FILL_DKDF, stack-up당 1회).
+- 0.4.0: All PWRs 탭 오른쪽에 Curves 패널(필터 검색, 체크박스+색상, ExtendedSelection, Space 토글, All/None/Invert/Only selected, 폭·가시성 세션 저장); Reset view(Ctrl+D/Ctrl+0)는 보이는 곡선만 기준으로 log 범위 계산, 수동 zoom 이후엔 가시성 변경이 범위를 건드리지 않음; View > Show Plot Legend(기본 off, export 이미지는 항상 legend 포함); 읽기 표는 보이는 PWR만. 테스트 715.
