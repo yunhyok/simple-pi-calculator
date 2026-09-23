@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 — 2026-09-23
+
+### Fixed
+- **Editing a decap cell changed the PWR by itself.** Every edit (a decap cell, the distance distribution, a PWR / via / stack-up value) refreshed the derived values and in the same call set the Decaps `PWR:` filter back to the PWR selected in the PWR Nets table. After editing # Decaps or Distance under "All PWRs" or under another PWR, the filter jumped to that PWR and the edited row could disappear. The filter now follows the PWR Nets table only when the user selects another row there. A model reset or a removed row that keeps the same PWR selected no longer counts as a new selection.
+- Editing the PWR Name of a decap row under a `PWR:` filter no longer makes the row vanish from under the cursor, with the current row jumping to another one. The filter is applied when it is set, not on every edit. Setting it again (even to the same PWR) re-applies it.
+- **Mouse wheel**: combo boxes and spin boxes change their value on the wheel only after you click into them and while they keep the focus. Otherwise the wheel scrolls the table or panel. Qt's default changes the widget under the pointer, focused or not (Windows), so scrolling past the `PWR:` filter, the distance mode, σ, seed, the via settings, sweep points or an open cell editor could silently change them.
+- Table cell editors: **Up / Down / Page Up / Page Down** move to another row and commit the typed value, like a spreadsheet. They used to step the number (e.g. # Decaps 10 → 9) or pick the next PWR in the PWR Name combo. The editable PWR Name combo no longer auto-completes typed text into another PWR name.
+- While a table cell editor has the focus, keys without Ctrl/Alt (Esc, letters, digits, Space) always go to the editor and never trigger a window shortcut. Add / Duplicate / Remove Row commit the open editor first. View ▸ Reset View (Ctrl+D / Ctrl+0) is a window shortcut instead of an application shortcut, so it no longer fires from the Help window. It still works while a spin box or cell editor has the focus.
+- **Column widths can be changed again.** 0.2.0 had set the numeric and check-box columns to `ResizeToContents`, which cannot be dragged and was recomputed on every data change. Every column of the Stack-up, PWR Nets and Decaps tables, the marker readout table and the Messages dock is now interactive. Automatic widths (fit to contents, the Name / Decap File column filling the free width, readout columns sharing the width) are computed at load time and apply only to columns you have not resized. A width you drag is never overwritten by an edit, a refresh or a project reload. User widths are stored in the auto-save (`session.window.column_widths`) and restored on startup. They are ignored if a table's column count changes.
+
 ## 0.4.0 — 2026-09-22
 
 ### Results

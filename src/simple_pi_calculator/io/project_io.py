@@ -160,6 +160,9 @@ class WindowState:
     decap_filter: str | None = None
     message_dock_visible: bool = True
     curve_panel_width: int = -1     # px width of the All PWRs curve list (-1 = not stored)
+    #: per table ("stackup", "pwr", "decaps", "readout", "messages"): one entry per column, the
+    #: width in px the user dragged it to or 0 = automatic; ignored when the column count differs
+    column_widths: dict[str, list[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -278,7 +281,9 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
                    "input_tab": int(w.input_tab), "result_tab": w.result_tab,
                    "decap_filter": w.decap_filter,
                    "message_dock_visible": bool(w.message_dock_visible),
-                   "curve_panel_width": int(w.curve_panel_width)},
+                   "curve_panel_width": int(w.curve_panel_width),
+                   "column_widths": {str(k): [int(x) for x in v]
+                                     for k, v in w.column_widths.items()}},
         "plots": {name: {"auto_range": bool(v.auto_range),
                          "x_range_log10": None if v.x_range_log10 is None
                          else [float(v.x_range_log10[0]), float(v.x_range_log10[1])],
@@ -516,6 +521,12 @@ def _session_from_dict(raw: Any) -> Session:
         w.decap_filter = get(window, "decap_filter", (str,), None)
         w.message_dock_visible = get(window, "message_dock_visible", (bool,), True)
         w.curve_panel_width = max(-1, int(get(window, "curve_panel_width", (int, float), -1)))
+        widths = window.get("column_widths")
+        if isinstance(widths, dict):
+            for key, values in widths.items():
+                if isinstance(key, str) and isinstance(values, list) and all(
+                        isinstance(x, (int, float)) and not isinstance(x, bool) for x in values):
+                    w.column_widths[key] = [max(0, int(x)) for x in values]
         session.window = w
     plots = raw.get("plots")
     if isinstance(plots, dict):

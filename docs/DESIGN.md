@@ -1494,6 +1494,7 @@ JSON Schema summary (draft 2020-12 semantics; implement validation by hand in
 | `session.window.decap_filter` | str or null | decap table filter (PWR name, null = All) |
 | `session.window.message_dock_visible` | bool | |
 | `session.window.curve_panel_width` | int | width in px of the curve list beside the *All PWRs* plot (§5.5); 0 = collapsed by the user, −1 or missing = the 220 px default |
+| `session.window.column_widths` | object table → list[int] | 0.4.1: per table (`stackup`, `pwr`, `decaps`, `readout`, `messages`) one entry per column, the width in px the user dragged it to or 0 = automatic; a list whose length differs from the table's column count is ignored (§5.5) |
 | `session.plots` | object PWR name → `{auto_range:bool, x_range_log10:[float,float], y_range_log10:[float,float]}` | `auto_range` = the plot is in the fitted default view (§5.6), the ranges are then re-fitted on restore; y range stored for the current `display.z_unit` |
 | `session.hidden_curves` | list[str] | PWR nets unticked in the curve list of the *All PWRs* tab (§5.5); names that no longer exist are ignored |
 | `session.had_results` | bool | results were shown when saved (triggers recompute on restore) |
@@ -1651,6 +1652,8 @@ simple-pi-calculator/
 │  │  ├─ main_window.py
 │  │  ├─ models.py                 QAbstractTableModel subclasses
 │  │  ├─ delegates.py              file-browse, combo delegates
+│  │  ├─ widgets.py                wheel guard, cell editors, shortcut guard (0.4.1)
+│  │  ├─ columns.py                interactive column widths, fill/share layout (0.4.1)
 │  │  ├─ panels.py                 StackupPanel, ViaPanel, PwrPanel, DecapPanel, SweepPanel
 │  │  ├─ plot_widget.py            ImpedancePlot (pyqtgraph)
 │  │  ├─ worker.py                 ComputeWorker (QObject in QThread)
@@ -2180,8 +2183,10 @@ minimum 1100 × 700.
      computation, §2.5.5) and the header adds "normal ±1σ: σ … mm, seed …"; a tooltip on
      hover names the port under the cursor (PAD i, or decap row with table row number and model file,
      via set index, capacitors, distance to the PAD row, x/y).
-  4. *Decaps*: filter `QComboBox` ("All PWRs" + names; auto-synced to the selected row in the PWR
-     tab); toolbar (Import…, Add, Remove); `DecapTableModel` via `QSortFilterProxyModel` (columns:
+  4. *Decaps*: filter `QComboBox` ("All PWRs" + names; synced when the user selects another row in
+     the PWR tab — only on a real selection change, never on a refresh after an edit (0.4.1));
+     the proxy does not re-filter on edits (`dynamicSortFilter` off), so a row whose PWR Name is
+     edited stays under the cursor until the filter is set again; toolbar (Import…, Add, Remove); `DecapTableModel` via `QSortFilterProxyModel` (columns:
      Enabled, PWR Name [combo delegate], Decap File [line edit + "…" browse delegate], Subckt,
      S2P Mode, Count, Distance mm, Dummy Cap ☑ [checkbox, `Qt.ItemIsUserCheckable`], derived:
      Via sets (P_k), C @100 kHz, SRF MHz). Adding a row pre-fills PWR Name
@@ -2196,6 +2201,18 @@ minimum 1100 × 700.
      parser: case-sensitive suffixes `k`/`K` = 1e3, `M` or `meg`/`MEG` = 1e6, `G` = 1e9, optional
      trailing `Hz`; lower-case `m` is rejected to avoid milli/mega confusion; e.g. `100k`, `1G`,
      `2.5MHz`), points spin box, "Show plane-only curve" check box.
+* **Table columns and accidental edits (0.4.1)**: every table header section is
+  `QHeaderView.Interactive` (`gui/columns.py`). Columns the user has not resized are fitted to their
+  contents (capped at 320 px) on construction and on a model reset (load/import), never on an edit;
+  the Name / Decap File column takes the free viewport width until the user resizes it; the readout
+  columns share the width. User widths survive edits, refreshes and reloads and are stored in
+  `session.window.column_widths` (§4.7). Combo boxes and spin boxes of the panels and the cell
+  editors ignore the mouse wheel unless the user clicked into them and they keep the focus
+  (`gui/widgets.py`, the event goes on to the parent, so the table or panel scrolls); in cell editors
+  Up/Down/Page Up/Page Down move to another row (committing the value) instead of stepping it, and
+  the editable PWR Name combo has no auto-completion. While a cell editor has the focus, keys without
+  Ctrl/Alt/Meta (except F-keys) never trigger a window shortcut; Add/Duplicate/Remove Row commit
+  the open editor first. View ▸ Reset View uses `Qt.WindowShortcut`.
 * **Right (results, ~60 %)**: `QTabWidget` with one `ImpedancePlot` per computed PWR (tab text =
   PWR name, red icon if that PWR failed), plus a `QTableWidget` readout table below
   (one row per PWR whose curve is shown, columns = |Z| @ 1 MHz, 10 MHz, 100 MHz in the current
@@ -2285,7 +2302,7 @@ on restore, §5.8.3).
   * `reset_view()` applies the default view, re-applies the marker visibility setting and emits
     `viewChanged`. Triggers: results-toolbar button "⟲ Reset view",
     View ▸ Reset View (`QAction`, shortcuts `Ctrl+D` and `Ctrl+0`,
-    `Qt.ApplicationShortcut`; Edit ▸ Duplicate Row moved to `Ctrl+Shift+D`), a "Reset view" entry
+    `Qt.WindowShortcut` since 0.4.1, `Qt.ApplicationShortcut` before; Edit ▸ Duplicate Row moved to `Ctrl+Shift+D`), a "Reset view" entry
     inserted at the top of the ViewBox context menu, and pyqtgraph's own "View All" entry, whose
     `triggered` signal is re-connected to `reset_view`. Per-PWR tabs use the same routine (one
     visible curve). Unit switching: in the fresh default view it re-fits; after a manual zoom X is

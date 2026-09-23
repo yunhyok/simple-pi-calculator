@@ -749,11 +749,18 @@ def _format_cap(c: float | None) -> str:
 
 
 class DecapFilterProxy(QSortFilterProxyModel):
-    """Filters decap rows by PWR name (``None`` = all PWRs)."""
+    """Filters decap rows by PWR name (``None`` = all PWRs).
+
+    The filter is applied when it is set (and to inserted rows), not on every edit: with Qt's
+    ``dynamicSortFilter`` an edit of the PWR Name cell under the ``PWR:`` filter made the row
+    vanish from under the cursor and the current row jump to another one. The edited row now
+    stays visible until the filter is set again.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pwr: str | None = None
+        self.setDynamicSortFilter(False)
 
     @property
     def pwr_filter(self) -> str | None:

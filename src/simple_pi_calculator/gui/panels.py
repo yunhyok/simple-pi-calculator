@@ -6,7 +6,7 @@ import os
 from typing import Any, Callable, Sequence
 
 import numpy as np
-from PySide6.QtCore import QEvent, QObject, QRectF, QSignalBlocker, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QRectF, QSignalBlocker, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -48,6 +47,7 @@ from simple_pi_calculator.constants import (
 )
 from simple_pi_calculator.core.stackup import is_metal_conductivity
 from simple_pi_calculator.core.units import format_frequency, parse_frequency
+from simple_pi_calculator.gui.columns import FillColumns
 from simple_pi_calculator.gui.delegates import (
     CheckBoxDelegate,
     ComboDelegate,
@@ -62,6 +62,7 @@ from simple_pi_calculator.gui.models import (
     StackupTableModel,
 )
 from simple_pi_calculator.gui.placement_preview import PlacementPreview
+from simple_pi_calculator.gui.widgets import install_wheel_guard
 
 ALL_PWRS = "All PWRs"
 
@@ -81,57 +82,17 @@ def _setup_table(view: QTableView) -> None:
     view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
                          | QAbstractItemView.EditTrigger.EditKeyPressed
                          | QAbstractItemView.EditTrigger.AnyKeyPressed)
-    view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-    view.horizontalHeader().setStretchLastSection(True)
     view.verticalHeader().setDefaultSectionSize(22)
 
 
-class _FillColumn(QObject):
-    """Keeps ``column`` as wide as the viewport space left by ``primary`` columns (min width).
-
-    Unlike ``QHeaderView.Stretch`` this still works when further (derived) columns follow and
-    the table scrolls horizontally: the primary columns always fit the visible width.
-    """
-
-    def __init__(self, view: QTableView, column: int, primary: Sequence[int],
-                 minimum: int = 120):
-        super().__init__(view)
-        self.view, self.column, self.primary, self.minimum = view, column, list(primary), minimum
-        view.viewport().installEventFilter(self)
-        view.horizontalHeader().sectionResized.connect(self._on_section_resized)
-
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802
-        if event.type() == QEvent.Type.Resize:
-            QTimer.singleShot(0, self.apply)
-        return False
-
-    def _on_section_resized(self, index: int, _old: int, _new: int) -> None:
-        if index != self.column and index in self.primary:
-            QTimer.singleShot(0, self.apply)
-
-    def apply(self) -> None:
-        header = self.view.horizontalHeader()
-        used = sum(header.sectionSize(c) for c in self.primary if c != self.column)
-        width = max(self.minimum, self.view.viewport().width() - used - 1)
-        if header.sectionSize(self.column) != width:
-            header.resizeSection(self.column, width)
-
-
-def size_columns(view: QTableView, fill: int, fit: Sequence[int],
-                 primary: Sequence[int] | None = None, minimum: int = 120) -> None:
-    """Column sizing: ``fit`` columns ResizeToContents; ``fill`` takes the viewport width left by
-    the ``primary`` columns (default: all); other columns interactive; last section not
-    stretched."""
-    header = view.horizontalHeader()
-    header.setStretchLastSection(False)
-    header.setMinimumSectionSize(28)
-    n = view.model().columnCount()
-    for col in range(n):
-        mode = (QHeaderView.ResizeMode.ResizeToContents if col in fit
-                else QHeaderView.ResizeMode.Interactive)
-        header.setSectionResizeMode(col, mode)
-    view._fill_column = _FillColumn(view, fill, primary if primary is not None else range(n),
-                                    minimum)
+def size_columns(view: QTableView, fill: int, primary: Sequence[int] | None = None,
+                 minimum: int = 120) -> FillColumns:
+    """Interactive columns: fitted to their contents once (construction, model reset), ``fill``
+    takes the viewport width left by the ``primary`` columns (default: all); widths the user
+    drags are kept and never re-fitted on edits (see :mod:`simple_pi_calculator.gui.columns`)."""
+    sizer = FillColumns(view, fill, primary, minimum)
+    view.column_sizer = sizer  # type: ignore[attr-defined]
+    return sizer
 
 
 def selected_source_rows(view: QTableView) -> list[int]:
@@ -261,9 +222,7 @@ class StackupPanel(QWidget):
         self.table.setModel(model)
         self.table.setItemDelegateForColumn(StackupTableModel.COL_NUMBER,
                                             SpinDelegate(self.table, 1, 999))
-        size_columns(self.table, StackupTableModel.COL_NAME,
-                     [c for c in range(model.columnCount()) if c != StackupTableModel.COL_NAME],
-                     minimum=80)
+        size_columns(self.table, StackupTableModel.COL_NAME, minimum=80)
         self.preview = StackupPreview(model, splitter)
         splitter.addWidget(self.table)
         splitter.addWidget(self.preview)
@@ -297,6 +256,7 @@ def _dspin(parent: QWidget, lo: float, hi: float, decimals: int, step: float,
     spin.setKeyboardTracking(False)
     if suffix:
         spin.setSuffix(suffix)
+    install_wheel_guard(spin)
     return spin
 
 
@@ -392,6 +352,8 @@ class ViaPanel(QWidget):
         self._adv_body.setVisible(False)
         self.advanced.toggled.connect(self._adv_body.setVisible)
         outer.addWidget(self.advanced)
+        install_wheel_guard(self.vias_per_pad, self.pad_vias, self.workers, self.via_model,
+                            self.s2p_mode)
         outer.addStretch(1)
 
         for spin in (self.drill, self.antipad, self.pitch, self.plating, self.conductivity,
@@ -502,9 +464,7 @@ class PwrPanel(QWidget):
                                             DoubleSpinDelegate(self.table, 0.0, 10000.0, 3, 1.0))
         self.table.setItemDelegateForColumn(PwrTableModel.COL_NPADS,
                                             SpinDelegate(self.table, 1, MAX_N_PADS))
-        size_columns(self.table, PwrTableModel.COL_NAME,
-                     [c for c in range(model.columnCount()) if c != PwrTableModel.COL_NAME],
-                     minimum=80)
+        size_columns(self.table, PwrTableModel.COL_NAME, minimum=80)
         self.preview = PlacementPreview(splitter)
         splitter.addWidget(self.table)
         splitter.addWidget(self.preview)
@@ -515,6 +475,7 @@ class PwrPanel(QWidget):
         self.remove_button.clicked.connect(
             lambda: self.model.remove_rows(selected_source_rows(self.table)))
         self.duplicate_button.clicked.connect(self._duplicate)
+        self._last_selected: str | None = None
         self.table.selectionModel().currentRowChanged.connect(lambda *_: self._emit_selected())
         model.modelReset.connect(self._emit_selected)
         model.rowsRemoved.connect(lambda *_: self._emit_selected())
@@ -542,7 +503,14 @@ class PwrPanel(QWidget):
                 return
 
     def _emit_selected(self) -> None:
-        self.selectedPwrChanged.emit(self.selected_pwr())
+        """``selectedPwrChanged`` only when the selected PWR really changed: a model reset or a
+        removed row that leaves the same PWR selected is not a new selection (the main window
+        syncs the Decaps ``PWR:`` filter on this signal)."""
+        name = self.selected_pwr()
+        if name == self._last_selected:
+            return
+        self._last_selected = name
+        self.selectedPwrChanged.emit(name)
 
 
 # =============================================================================================
@@ -631,6 +599,7 @@ class DecapPanel(QWidget):
         dist.addWidget(self.seed)
         self.new_seed_button = _tool_button("New seed", "Draw a new random seed", self)
         dist.addWidget(self.new_seed_button)
+        install_wheel_guard(self.filter_combo, self.distance_mode, self.seed)
         dist.addStretch(1)
         layout.addLayout(dist)
         # each control writes only its own field (review v0.3: a σ that the spin box cannot show
@@ -659,10 +628,8 @@ class DecapPanel(QWidget):
                                             SpinDelegate(self.table, 1, 100000))
         self.table.setItemDelegateForColumn(DecapTableModel.COL_DIST,
                                             DoubleSpinDelegate(self.table, 0.0, 10000.0, 3, 0.5))
-        primary = list(range(DecapTableModel.COL_MODE + 1))
         size_columns(self.table, DecapTableModel.COL_FILE,
-                     [c for c in range(model.columnCount()) if c != DecapTableModel.COL_FILE],
-                     primary=primary, minimum=110)
+                     primary=list(range(DecapTableModel.COL_MODE + 1)), minimum=110)
         layout.addWidget(self.table, 1)
         self.last_preview: DecapModelPreviewDialog | None = None
 
@@ -737,8 +704,15 @@ class DecapPanel(QWidget):
         self.proxy.set_pwr_filter(self.filter_combo.currentData())
 
     def set_filter(self, name: str | None) -> None:
+        """Select ``name`` in the ``PWR:`` combo and (re-)apply the filter.
+
+        The proxy does not re-filter on edits, so a row whose PWR Name was just changed stays
+        visible until the filter is set again; setting the same filter re-applies it.
+        """
         i = self.filter_combo.findData(name) if name is not None else 0
         self.filter_combo.setCurrentIndex(max(i, 0))
+        if self.filter_combo.currentData() == self.proxy.pwr_filter:
+            self.proxy.set_pwr_filter(self.proxy.pwr_filter)
         self._on_filter()
 
     def current_filter(self) -> str | None:
@@ -811,6 +785,7 @@ class SweepPanel(QWidget):
         self.points = QSpinBox(self)
         self.points.setRange(N_POINTS_MIN, N_POINTS_MAX)
         self.points.setKeyboardTracking(False)
+        install_wheel_guard(self.points)
         self.plane_only = QCheckBox("Show plane-only curve (no decaps)", self)
         self.status = QLabel("", self)
         self.status.setStyleSheet("color: #b00020;")

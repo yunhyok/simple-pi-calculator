@@ -8,7 +8,7 @@ import os
 import sys
 from typing import Any, Sequence
 
-from PySide6.QtCore import QEvent, QObject, QThread, QTimer, QUrl, Qt, \
+from PySide6.QtCore import QThread, QTimer, QUrl, Qt, \
     Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QDesktopServices, \
     QGuiApplication, QIcon, QKeySequence, QPixmap
@@ -24,8 +24,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMenu,
-    QHBoxLayout,
-    QHeaderView,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -50,6 +48,7 @@ from simple_pi_calculator.constants import (
 from simple_pi_calculator.core.types import rows_from_stackup
 from simple_pi_calculator.core.units import MM, format_frequency, format_sig, z_label, z_scale
 from simple_pi_calculator.errors import InputError, Issue, IssueCollector, Severity
+from simple_pi_calculator.gui.columns import ShareColumns, install_column_sizer
 from simple_pi_calculator.gui.engine_bridge import EngineBridge, EngineUnavailableError
 from simple_pi_calculator.gui.help_window import HELP_PAGES, HelpWindow, help_dir
 from simple_pi_calculator.gui.message_dock import MessageDock
@@ -76,6 +75,7 @@ from simple_pi_calculator.gui.plot_widget import (
     series_color,
 )
 from simple_pi_calculator.io.export import TouchstoneOptions, safe_file_name
+from simple_pi_calculator.gui.widgets import ShortcutGuard
 from simple_pi_calculator.gui.worker import ComputeWorker
 from simple_pi_calculator.io.project_io import (
     AutosaveStore,
@@ -140,42 +140,6 @@ RESULTS_PANE_MIN_WIDTH = 320
 #: Default and smallest width of the curve list next to the All PWRs plot (§5.5).
 CURVE_PANEL_DEFAULT_WIDTH = 220
 CURVE_PANEL_MIN_WIDTH = 110
-
-
-class _ReadoutColumns(QObject):
-    """Readout table columns fill the viewport when there is room, otherwise keep a readable
-    width and let the table scroll horizontally (never enforces a minimum pane width)."""
-
-    def __init__(self, table: QTableWidget):
-        super().__init__(table)
-        self.table = table
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        header.setStretchLastSection(False)
-        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        table.installEventFilter(self)
-
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802
-        if obj is self.table and event.type() == QEvent.Type.Resize:
-            self.apply()
-        return False
-
-    def apply(self) -> None:
-        table = self.table
-        n = table.columnCount()
-        if n <= 0:
-            return
-        header = table.horizontalHeader()
-        # Width available to the columns, computed from the table frame (not the viewport) and
-        # always reserving room for a vertical scroll bar: it must not depend on scroll-bar
-        # visibility, or showing/hiding a bar would re-trigger this in a loop.
-        bar = table.style().pixelMetric(table.style().PixelMetric.PM_ScrollBarExtent, None, table)
-        vheader = table.verticalHeader().width() if table.verticalHeader().isVisible() else 0
-        share = max(0, table.contentsRect().width() - vheader - bar) // n
-        for col in range(n):
-            wanted = max(header.sectionSizeHint(col), table.sizeHintForColumn(col))
-            header.resizeSection(col, max(wanted, share))
 
 
 def color_swatch(color: str, size: int = 12) -> QIcon:
@@ -466,6 +430,7 @@ class MainWindow(QMainWindow):
 
         self._build_models()
         self._build_ui()
+        self._shortcut_guard = ShortcutGuard(self)
         self._build_actions()
         self._build_menus()
         self._load_project_into_ui()
@@ -555,7 +520,10 @@ class MainWindow(QMainWindow):
         self.result_tabs.addTab(self.overview, OVERVIEW_TAB)
         self.readout_table = QTableWidget(0, len(MARKER_FREQUENCIES_HZ), result_splitter)
         self.readout_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._readout_columns = _ReadoutColumns(self.readout_table)
+        table = self.readout_table
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._readout_columns = ShareColumns(table)
         self.readout_table.setMinimumHeight(80)
         result_splitter.addWidget(self.result_tabs)
         result_splitter.addWidget(self.readout_table)
@@ -575,6 +543,7 @@ class MainWindow(QMainWindow):
         self.message_dock = MessageDock(self)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.message_dock)
         self.message_dock.issueActivated.connect(self.navigate_to_issue)
+        self._message_columns = install_column_sizer(self.message_dock.tree)
         self.resizeDocks([self.message_dock], [150], Qt.Orientation.Vertical)
 
         bar = self.statusBar()
@@ -657,7 +626,9 @@ class MainWindow(QMainWindow):
         self.act_reset_view = A("&Reset View", self, triggered=lambda: self.reset_view())
         self.act_reset_view.setShortcuts([QKeySequence(RESET_VIEW_SHORTCUT),
                                           QKeySequence("Ctrl+0")])
-        self.act_reset_view.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        # window (not application) context: Ctrl+D in the Help window must not reset the plot;
+        # it still works while a spin box, line edit or table cell editor has the focus
+        self.act_reset_view.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
         self.act_reset_view.setToolTip("Reset view: fit all visible curves, log–log axes "
                                        f"({RESET_VIEW_SHORTCUT})")
         self.act_reset_zoom = self.act_reset_view  # backwards-compatible name
@@ -778,6 +749,8 @@ class MainWindow(QMainWindow):
         self.overview_plot.viewChanged.connect(self._schedule_autosave)
         self.overview.visibilityChanged.connect(self._on_curve_visibility_changed)
         self.overview.splitter.splitterMoved.connect(lambda *_: self._schedule_autosave())
+        for sizer in self.column_sizers().values():
+            sizer.userResized.connect(self._schedule_autosave)
         app = QGuiApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._flush_autosave)
@@ -859,12 +832,12 @@ class MainWindow(QMainWindow):
         self.pwr_model.refresh_derived()
         self.decap_model.refresh()
         self.stackup_panel.preview.update()
-        self._on_selected_pwr(self.pwr_panel.selected_pwr())
+        self._show_selected_pwr(self.pwr_panel.selected_pwr())
 
     def _on_pwr_list_changed(self) -> None:
         self.decap_panel.refresh_filter_items()
         self.decap_model.refresh()
-        self._on_selected_pwr(self.pwr_panel.selected_pwr())
+        self._show_selected_pwr(self.pwr_panel.selected_pwr())
 
     def _on_pwr_renamed(self, old: str, new: str) -> None:
         self.decap_model.rename_pwr(old, new)
@@ -879,6 +852,22 @@ class MainWindow(QMainWindow):
         return None
 
     def _on_selected_pwr(self, name: str | None) -> None:
+        """The user selected another PWR in the PWR Nets table: show it and let the Decaps
+        ``PWR:`` filter follow.
+
+        Only a real selection change syncs the filter. Refreshes after an edit (any decap, PWR,
+        via or stack-up cell, the distance distribution …) call :meth:`_show_selected_pwr` and
+        leave the filter alone: before 0.4.1 every edit re-synced it, so editing a decap under
+        "All PWRs" or another PWR switched the Decaps tab to the PWR selected in the PWR Nets
+        table ("the channel changes by itself").
+        """
+        self._show_selected_pwr(name)
+        if not self._applying and name is not None \
+                and self.decap_panel.current_filter() != name:
+            self.decap_panel.set_filter(name)
+
+    def _show_selected_pwr(self, name: str | None) -> None:
+        """Placement preview, stack-up highlight and derived via values of PWR ``name``."""
         row = self._pwr_row(name)
         if row is None:
             self.pwr_panel.preview.set_placement(None, "", "Select a PWR net to preview its "
@@ -897,8 +886,6 @@ class MainWindow(QMainWindow):
             w_pad_mm = w_dec_mm = None
         self.via_panel.set_derived(summary.get("h_near_mm"), summary.get("l_loop_nh"),
                                    w_pad_mm, w_dec_mm)
-        if not self._applying and self.decap_panel.current_filter() != name:
-            self.decap_panel.set_filter(name)
 
     def _update_title(self) -> None:
         name = project_stem(self.project_path) if self.project_path else "Untitled"
@@ -931,6 +918,8 @@ class MainWindow(QMainWindow):
             decap_filter=self.decap_panel.current_filter(),
             message_dock_visible=not self.message_dock.isHidden(),
             curve_panel_width=int(self.overview.panel_width()),
+            column_widths={key: sizer.widths() for key, sizer in self.column_sizers().items()
+                           if any(sizer.widths())},
         )
         plots = dict(self._pending_views)
         for name, plot in self.plots.items():
@@ -958,6 +947,10 @@ class MainWindow(QMainWindow):
             self.decap_panel.set_filter(w.decap_filter)
             if w.curve_panel_width >= 0:
                 self.overview.set_panel_width(int(w.curve_panel_width))
+            sizers = self.column_sizers()
+            for key, widths in w.column_widths.items():
+                if key in sizers:
+                    sizers[key].restore(widths)  # ignored if the column count changed
             self.message_dock.setVisible(bool(w.message_dock_visible))
             self.recent_files = list(session.recent_files[:MAX_RECENT_FILES])
             self._rebuild_recent_menu()
@@ -970,6 +963,14 @@ class MainWindow(QMainWindow):
             self._update_title()
         finally:
             self._applying -= 1
+
+    def column_sizers(self) -> dict[str, Any]:
+        """Column-width managers of the tables, keyed as in ``session.window.column_widths``."""
+        return {"stackup": self.stackup_panel.table.column_sizer,
+                "pwr": self.pwr_panel.table.column_sizer,
+                "decaps": self.decap_panel.table.column_sizer,
+                "readout": self._readout_columns,
+                "messages": self._message_columns}
 
     def _ensure_on_screen(self) -> None:
         frame = self.frameGeometry()
@@ -1525,6 +1526,7 @@ class MainWindow(QMainWindow):
     # Edit menu
     # =========================================================================================
     def add_row(self) -> None:
+        self.commit_pending_edits()  # keep the typed value; rows move under an open editor
         tab = self.input_tabs.currentIndex()
         if tab == TAB_STACKUP:
             self.stackup_model.insert_row()
@@ -1534,6 +1536,7 @@ class MainWindow(QMainWindow):
             self.decap_panel.add_button.click()
 
     def duplicate_row(self) -> None:
+        self.commit_pending_edits()
         tab = self.input_tabs.currentIndex()
         if tab == TAB_PWR:
             self.pwr_panel.duplicate_button.click()
@@ -1541,6 +1544,7 @@ class MainWindow(QMainWindow):
             self.decap_panel.duplicate_button.click()
 
     def remove_rows(self) -> None:
+        self.commit_pending_edits()
         tab = self.input_tabs.currentIndex()
         if tab == TAB_STACKUP:
             self.stackup_panel.remove_button.click()

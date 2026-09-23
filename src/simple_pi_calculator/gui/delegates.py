@@ -22,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from simple_pi_calculator.gui.widgets import CellComboBox, CellDoubleSpinBox, CellSpinBox
+
 Index = QModelIndex | QPersistentModelIndex
 
 DECAP_FILE_FILTER = ("Decap models (*.mod *.lib *.sp *.cir *.sub *.inc *.s2p);;"
@@ -82,7 +84,11 @@ class FileBrowseDelegate(QStyledItemDelegate):
 
 
 class ComboDelegate(QStyledItemDelegate):
-    """Combo box with items supplied by a callable (e.g. current PWR names)."""
+    """Combo box with items supplied by a callable (e.g. current PWR names).
+
+    The editor ignores the mouse wheel unless clicked into, and Up/Down move to another row
+    instead of choosing the next item (:class:`~simple_pi_calculator.gui.widgets.CellComboBox`).
+    """
 
     def __init__(self, parent=None, items: Callable[[], Sequence[str]] | None = None,
                  editable: bool = False):
@@ -92,9 +98,14 @@ class ComboDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
                      index: Index) -> QWidget:
-        combo = QComboBox(parent)
+        combo = CellComboBox(parent)
         combo.setEditable(self._editable)
         combo.addItems(list(self._items()))
+        if self._editable:
+            # typed text is never replaced by an item picked by the combo box itself: no
+            # auto-completion into another PWR name, no insertion of new items into the list
+            combo.setCompleter(None)
+            combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         return combo
 
     def setEditorData(self, editor: QWidget, index: Index) -> None:
@@ -112,7 +123,7 @@ class ComboDelegate(QStyledItemDelegate):
 
 
 class SpinDelegate(QStyledItemDelegate):
-    """Integer spin box editor."""
+    """Integer spin box editor (wheel guarded; Up/Down move to another row)."""
 
     def __init__(self, parent=None, minimum: int = 0, maximum: int = 100000, step: int = 1):
         super().__init__(parent)
@@ -120,7 +131,7 @@ class SpinDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
                      index: Index) -> QWidget:
-        spin = QSpinBox(parent)
+        spin = CellSpinBox(parent)
         spin.setRange(self._min, self._max)
         spin.setSingleStep(self._step)
         return spin
@@ -139,7 +150,7 @@ class SpinDelegate(QStyledItemDelegate):
 
 
 class DoubleSpinDelegate(QStyledItemDelegate):
-    """Floating-point spin box editor."""
+    """Floating-point spin box editor (wheel guarded; Up/Down move to another row)."""
 
     def __init__(self, parent=None, minimum: float = 0.0, maximum: float = 1e6,
                  decimals: int = 3, step: float = 0.1):
@@ -148,7 +159,7 @@ class DoubleSpinDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
                      index: Index) -> QWidget:
-        spin = QDoubleSpinBox(parent)
+        spin = CellDoubleSpinBox(parent)
         spin.setRange(self._min, self._max)
         spin.setDecimals(self._dec)
         spin.setSingleStep(self._step)

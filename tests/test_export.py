@@ -438,7 +438,8 @@ def test_ctrl_d_resets_view(window, qtbot):
 
     w = window
     assert QKeySequence("Ctrl+D") in w.act_reset_view.shortcuts()
-    assert w.act_reset_view.shortcutContext() == Qt.ShortcutContext.ApplicationShortcut
+    # 0.4.1: window context (Ctrl+D in the Help window must not reset the plot)
+    assert w.act_reset_view.shortcutContext() == Qt.ShortcutContext.WindowShortcut
     assert w.act_duplicate_row.shortcut() != QKeySequence("Ctrl+D")
     w.select_result_tab("VDD_CORE")
     plot = w.current_plot()
