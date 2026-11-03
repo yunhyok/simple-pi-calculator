@@ -22,6 +22,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\Simple PI Calculator
+DisableDirPage=no
 DefaultGroupName=Simple PI Calculator
 ; Allow the user to choose a per-machine or per-user install at run time.
 PrivilegesRequiredOverridesAllowed=dialog
